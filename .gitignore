@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# hardhat
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/typechain-types/
+
+# next.js
+packages/web/.next/
+packages/web/out/
+packages/web/next-env.d.ts
+
+# playwright
+packages/web/playwright-report/
+packages/web/test-results/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.log
+coverage/
+*.tsbuildinfo
