@@ -45,12 +45,17 @@ npm run dev --workspace @rushood/web                    # http://localhost:3000
 ```
 
 Open the app, click **Connect Mock Connector** (Hardhat account #1, unlocked on the local
-node), and **Place bet (100 RUSH)**. The relayer settles it and the panel shows the result.
-Contract addresses default to the deterministic local-deploy addresses; override with
-`NEXT_PUBLIC_GAME_ADDRESS` / `NEXT_PUBLIC_RUSH_ADDRESS` / `NEXT_PUBLIC_RPC_URL`.
+node), and **Place bet (100 RUSH)**. The relayer settles it (sponsoring gas) and the panel
+shows the result. Contract addresses default to the deterministic local-deploy addresses;
+override with `NEXT_PUBLIC_GAME_ADDRESS` / `NEXT_PUBLIC_RUSH_ADDRESS` / `NEXT_PUBLIC_RPC_URL`.
+
+**Relayer + refund (#19).** The relayer manages the server hash chain and rotates to a fresh
+chain before exhaustion (`RELAYER_CHAIN_LENGTH`, `RELAYER_ROTATION_MARGIN`). Players pay gas
+only for `placeBet`; settlement is on the relayer. If the relayer goes dark, any bet left
+unsettled past `SETTLE_TIMEOUT` (1 hour) can be reclaimed on-chain via `refund(betId)`.
 
 The single hardcoded tier, single-active-bet flow, and reproducible dev seed are skeleton
-simplifications — odds tiers, payout math, and a real relayer deepen in later tickets.
+simplifications — odds tiers, payout math, and governance over the relayer deepen in later tickets.
 
 ## Status
 

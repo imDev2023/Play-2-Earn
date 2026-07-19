@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 /// @title Treasury
 /// @notice Minimal RUSH vault for the walking skeleton. It custodies staked RUSH
-///         and pays winning payouts, but only when the authorized game says so.
+///         and releases it (winnings or refunds) only when the authorized game says so.
 /// @dev The game address is wired once, after deployment, to break the
 ///      Treasury<->Game constructor cycle. Everything here deepens in later tickets
 ///      (profit-burn, governance, solvency caps) — this is the thinnest safe vault.
@@ -49,10 +49,11 @@ contract Treasury {
         game = game_;
     }
 
-    /// @notice Pay a winning payout. Callable only by the wired game.
-    /// @param to Recipient of the payout.
+    /// @notice Release RUSH (a winning payout or a refunded stake). Callable only
+    ///         by the wired game.
+    /// @param to Recipient of the funds.
     /// @param amount Amount of RUSH to transfer.
-    function payWinnings(address to, uint256 amount) external {
+    function pay(address to, uint256 amount) external {
         if (msg.sender != game) revert NotGame();
         token.safeTransfer(to, amount);
     }

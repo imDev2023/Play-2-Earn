@@ -44,6 +44,7 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
       await rush.getAddress(),
       await treasury.getAddress(),
       commit0,
+      relayer.address,
     );
 
     await treasury.setGame(await game.getAddress());
@@ -75,10 +76,10 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
       );
     });
 
-    it("only the game can pay winnings", async () => {
+    it("only the game can pay from the treasury", async () => {
       const { treasury, outsider, player } = await deploy();
       await expect(
-        treasury.connect(outsider).payWinnings(player.address, BET_AMOUNT),
+        treasury.connect(outsider).pay(player.address, BET_AMOUNT),
       ).to.be.revertedWithCustomError(treasury, "NotGame");
     });
 

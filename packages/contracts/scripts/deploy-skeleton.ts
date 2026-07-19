@@ -1,7 +1,8 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ethers, network } from "hardhat";
-import { buildHashChain, DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
+import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
+import { epochChain } from "./lib/relayer-core";
 
 /**
  * Deploy the walking-skeleton stack (RUSH + Treasury + RushoodGame) to a local chain,
@@ -20,8 +21,10 @@ const PLAYER_FUNDING = 10_000n * 10n ** 18n;
 
 async function main() {
   const signers = await ethers.getSigners();
-  const [deployer, player] = signers;
-  const genesis = buildHashChain(MASTER_SEED, CHAIN_LENGTH)[0];
+  const [deployer, player, relayer] = signers;
+  // Epoch 0 chain; the relayer advances epochs as it rotates.
+  const genesis = epochChain(MASTER_SEED, 0, CHAIN_LENGTH)[0];
+  const relayerAddress = (relayer ?? deployer).address;
 
   const rush = await (await ethers.getContractFactory("Rushood")).deploy(deployer.address);
   await rush.waitForDeployment();
@@ -35,6 +38,7 @@ async function main() {
     await rush.getAddress(),
     await treasury.getAddress(),
     genesis,
+    relayerAddress,
   );
   await game.waitForDeployment();
 
@@ -51,6 +55,7 @@ async function main() {
     treasury: await treasury.getAddress(),
     game: await game.getAddress(),
     genesisCommit: genesis,
+    relayer: relayerAddress,
     devPlayer: player?.address ?? null,
   };
 
