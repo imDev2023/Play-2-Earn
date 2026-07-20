@@ -4,6 +4,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { buildHashChain } from "../scripts/lib/hashchain";
 import { settleNextBet, shouldRotate } from "../scripts/lib/relayer-core";
 
+const COINFLIP_TIER = 0; // 1-in-2 tier used for the relayer/refund lifecycle tests
 const BET_AMOUNT = 100n * 10n ** 18n;
 const TREASURY_FUNDING = 100_000n * 10n ** 18n;
 const PLAYER_FUNDING = 1_000n * 10n ** 18n;
@@ -34,7 +35,7 @@ describe("Relayer + timeout refund (#19)", () => {
   describe("refund", () => {
     it("returns the stake after the timeout when the relayer never settles", async () => {
       const { rush, treasury, game, player } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING - BET_AMOUNT);
 
       await time.increase(Number(await game.SETTLE_TIMEOUT()) + 1);
@@ -50,15 +51,15 @@ describe("Relayer + timeout refund (#19)", () => {
 
     it("lets the player place a new bet after a refund (game not bricked)", async () => {
       const { game, player } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       await time.increase(Number(await game.SETTLE_TIMEOUT()) + 1);
       await game.connect(player).refund(1n);
-      await expect(game.connect(player).placeBet(2n)).to.emit(game, "BetPlaced");
+      await expect(game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 2n)).to.emit(game, "BetPlaced");
     });
 
     it("reverts a refund before the timeout", async () => {
       const { game, player } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       await expect(game.connect(player).refund(1n)).to.be.revertedWithCustomError(
         game,
         "RefundNotReady",
@@ -67,7 +68,7 @@ describe("Relayer + timeout refund (#19)", () => {
 
     it("reverts refunding a non-active bet id", async () => {
       const { game, player } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       await time.increase(Number(await game.SETTLE_TIMEOUT()) + 1);
       await expect(game.connect(player).refund(2n)).to.be.revertedWithCustomError(
         game,
@@ -77,7 +78,7 @@ describe("Relayer + timeout refund (#19)", () => {
 
     it("does not advance the chain head on refund", async () => {
       const { game, player, chain } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       await time.increase(Number(await game.SETTLE_TIMEOUT()) + 1);
       await game.connect(player).refund(1n);
       expect(await game.currentCommit()).to.equal(chain[0]);
@@ -104,7 +105,7 @@ describe("Relayer + timeout refund (#19)", () => {
 
     it("rejects rotation while a bet is active", async () => {
       const { game, relayer, player } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       const next = buildHashChain("x", 16);
       await expect(
         game.connect(relayer).rotateChain(next[0]),
@@ -130,15 +131,16 @@ describe("Relayer + timeout refund (#19)", () => {
   describe("relayer core against a local node", () => {
     it("settles the active bet by revealing the next chain node", async () => {
       const { rush, game, player, relayer, chain } = await deploy();
-      await game.connect(player).placeBet(7n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 7n);
 
       const result = await settleNextBet(game.connect(relayer), chain);
       expect(result?.settled).to.equal(true);
       expect(await game.activeBetId()).to.equal(0n);
       expect(await game.currentCommit()).to.equal(chain[1]);
-      // Player balance moved by exactly a loss (-stake) or a win (+stake).
+      // Player balance moved by exactly a loss (-stake) or a coinflip win (+0.9*stake).
+      const netWin = (BET_AMOUNT * 95n * 2n) / 100n - BET_AMOUNT;
       const bal = await rush.balanceOf(player.address);
-      expect([PLAYER_FUNDING - BET_AMOUNT, PLAYER_FUNDING + BET_AMOUNT]).to.include(bal);
+      expect([PLAYER_FUNDING - BET_AMOUNT, PLAYER_FUNDING + netWin]).to.include(bal);
     });
 
     it("returns null when there is no active bet to settle", async () => {
