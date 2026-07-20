@@ -5,7 +5,8 @@ const COINFLIP_TIER = 0; // 1-in-2
 const BET_AMOUNT = 100n * 10n ** 18n;
 // Coinflip payout is 0.95 x 2 = 1.9x (5% edge), not the old zero-edge 2x.
 const PAYOUT = (BET_AMOUNT * 95n * 2n) / 100n;
-const NET_WIN = PAYOUT - BET_AMOUNT; // player's net gain / treasury's net loss on a win
+const NET_WIN = PAYOUT - BET_AMOUNT; // player's net gain on a win
+const BURN = (BET_AMOUNT * 250n) / 10_000n; // 2.5% of the stake burned on settle (#21)
 const TREASURY_FUNDING = 100_000n * 10n ** 18n;
 const PLAYER_FUNDING = 1_000n * 10n ** 18n;
 
@@ -128,11 +129,11 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
         .to.emit(game, "BetSettled")
         .withArgs(1n, player.address, true, PAYOUT);
 
-      // Player: -stake on bet, +1.9*stake on win => net +0.9*stake.
+      // Player: -stake on bet, +1.9*stake on win => net +0.9*stake (burn is treasury-side).
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING + NET_WIN);
-      // Treasury: +stake on bet, -1.9*stake on payout => net -0.9*stake.
+      // Treasury: +stake, -1.9*stake payout, -2.5% burn => net -0.9*stake - burn.
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
-        TREASURY_FUNDING - NET_WIN,
+        TREASURY_FUNDING - NET_WIN - BURN,
       );
       expect(await game.currentCommit()).to.equal(reveals.reveal1);
       expect(await game.activeBetId()).to.equal(0n);
@@ -148,8 +149,9 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
         .withArgs(1n, player.address, false, 0n);
 
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING - BET_AMOUNT);
+      // Treasury keeps the stake less the 2.5% burn (#21 deflation).
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
-        TREASURY_FUNDING + BET_AMOUNT,
+        TREASURY_FUNDING + BET_AMOUNT - BURN,
       );
       expect(await game.currentCommit()).to.equal(reveals.reveal1);
     });

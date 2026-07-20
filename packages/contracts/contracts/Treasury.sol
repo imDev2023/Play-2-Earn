@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20Burnable} from "./interfaces/IERC20Burnable.sol";
 
 /// @title Treasury
 /// @notice Minimal RUSH vault for the walking skeleton. It custodies staked RUSH
@@ -56,5 +57,13 @@ contract Treasury {
     function pay(address to, uint256 amount) external {
         if (msg.sender != game) revert NotGame();
         token.safeTransfer(to, amount);
+    }
+
+    /// @notice Burn RUSH held by the treasury, permanently shrinking the supply.
+    ///         Callable only by the wired game (per-play burn and profit-burn).
+    /// @param amount Amount of RUSH to burn from the treasury's own balance.
+    function burn(uint256 amount) external {
+        if (msg.sender != game) revert NotGame();
+        IERC20Burnable(address(token)).burn(amount);
     }
 }

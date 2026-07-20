@@ -182,7 +182,11 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       await expect(game.connect(relayer).settleBet(chain[1]))
         .to.emit(game, "BetSettled")
         .withArgs(1n, player.address, true, payout);
-      expect(await rush.balanceOf(await treasury.getAddress())).to.equal(treasuryBefore - payout);
+      // Settle pays the win and burns 2.5% of the stake (#21 deflation).
+      const burn = (stake * 250n) / 10_000n;
+      expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
+        treasuryBefore - payout - burn,
+      );
     });
 
     it("keeps the stake on a losing settle", async () => {
@@ -195,7 +199,9 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       await expect(game.connect(relayer).settleBet(chain[1]))
         .to.emit(game, "BetSettled")
         .withArgs(1n, player.address, false, 0n);
-      expect(await rush.balanceOf(await treasury.getAddress())).to.equal(treasuryBefore);
+      // The stake stays, less the 2.5% burn (#21 deflation).
+      const burn = (stake * 250n) / 10_000n;
+      expect(await rush.balanceOf(await treasury.getAddress())).to.equal(treasuryBefore - burn);
     });
   });
 

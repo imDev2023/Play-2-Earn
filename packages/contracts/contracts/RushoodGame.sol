@@ -74,6 +74,15 @@ contract RushoodGame {
     /// @notice How long an unsettled bet must wait before it can be refunded.
     uint256 public constant SETTLE_TIMEOUT = 1 hours;
 
+    /// @notice Basis-points denominator for the burn rate (10000 = 100%).
+    uint256 public constant BPS_DEN = 10_000;
+
+    /// @notice Default per-play burn rate: 2.5% of the stake.
+    uint256 public constant DEFAULT_BURN_RATE_BPS = 250;
+
+    /// @notice Ceiling governance may set the burn rate to: 10% of the stake.
+    uint256 public constant MAX_BURN_RATE_BPS = 1_000;
+
     /// @notice The RUSH token staked and paid out.
     IERC20 public immutable token;
 
@@ -82,6 +91,13 @@ contract RushoodGame {
 
     /// @notice Account authorized to rotate the server hash chain.
     address public immutable relayer;
+
+    /// @notice Account authorized to tune economic policy (burn rate, profit-burn).
+    /// @dev The deployer at construction; #22 migrates this to a Safe + Timelock.
+    address public immutable governance;
+
+    /// @notice Fraction of each settled stake that is burned, in basis points.
+    uint256 public burnRateBps;
 
     /// @notice Head of the server hash chain: the next reveal must hash to this.
     bytes32 public currentCommit;
@@ -103,8 +119,11 @@ contract RushoodGame {
         uint256 clientSeed
     );
     event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout);
+    event StakeBurned(uint256 indexed betId, uint256 amount);
     event BetRefunded(uint256 indexed betId, address indexed player, uint256 amount);
     event ChainRotated(bytes32 newCommit);
+    event BurnRateUpdated(uint256 newBps);
+    event TreasuryProfitBurned(uint256 amount);
 
     /// @notice Thrown when the constructor is given the zero address as token.
     error TokenIsZeroAddress();
@@ -130,6 +149,14 @@ contract RushoodGame {
     error InvalidReveal();
     /// @notice Thrown when a non-relayer attempts to rotate the chain.
     error NotRelayer();
+    /// @notice Thrown when a non-governance account calls a governance-only function.
+    error NotGovernance();
+    /// @notice Thrown when setting a burn rate above MAX_BURN_RATE_BPS.
+    error BurnRateTooHigh();
+    /// @notice Thrown when a profit-burn would drop the treasury below the floor.
+    error BurnBelowFloor();
+    /// @notice Thrown when a profit-burn is attempted while a bet is active.
+    error BurnWhileBetActive();
     /// @notice Thrown when refunding a bet id that is not the active, unsettled bet.
     error NotRefundable();
     /// @notice Thrown when refunding before the settle timeout has elapsed.
@@ -139,6 +166,8 @@ contract RushoodGame {
     /// @param treasury_ The treasury holding stakes and funding payouts.
     /// @param initialCommit The genesis head of the server hash chain.
     /// @param relayer_ The account authorized to rotate the chain.
+    /// @dev The `governance` role (burn-rate + profit-burn) defaults to the deployer,
+    ///      mirroring `Treasury.deployer`; #22 migrates it to a Safe + Timelock.
     constructor(IERC20 token_, Treasury treasury_, bytes32 initialCommit, address relayer_) {
         if (address(token_) == address(0)) revert TokenIsZeroAddress();
         if (address(treasury_) == address(0)) revert TreasuryIsZeroAddress();
@@ -147,6 +176,8 @@ contract RushoodGame {
         treasury = treasury_;
         currentCommit = initialCommit;
         relayer = relayer_;
+        governance = msg.sender;
+        burnRateBps = DEFAULT_BURN_RATE_BPS;
     }
 
     /// @notice The odds N for a tier: a 1-in-N shot.
@@ -233,14 +264,24 @@ contract RushoodGame {
         // 1-in-N: win when the outcome is congruent to 0 mod N. P(win) = 1/N.
         bool win = uint256(keccak256(abi.encodePacked(reveal, bet.clientSeed))) % odds(bet.tier) == 0;
         uint256 payout = win ? payoutFor(bet.tier, bet.stake) : 0;
+        // Deflation: a slice of every settled stake is burned regardless of outcome,
+        // so totalSupply only ever falls as the game is played. Tiny next to the 1%
+        // solvency cap, so it never threatens payability.
+        uint256 burnAmount = (bet.stake * burnRateBps) / BPS_DEN;
         if (win) {
-            // Effects above the external call keep this reentrancy-safe. The solvency
+            // Effects above the external calls keep this reentrancy-safe. The solvency
             // cap enforced at placeBet guarantees the treasury (which also holds this
             // bet's stake) can always cover `payout`, so this never bricks the game.
             treasury.pay(bet.player, payout);
         }
-
         emit BetSettled(betId, bet.player, win, payout);
+
+        // Burn last: it runs on every settled play (win or loss) but after the payout,
+        // so it can never starve a win. A zero rate simply skips it.
+        if (burnAmount != 0) {
+            treasury.burn(burnAmount);
+            emit StakeBurned(betId, burnAmount);
+        }
     }
 
     /// @notice Refund the locked stake for a bet the relayer never settled.
@@ -278,5 +319,29 @@ contract RushoodGame {
         if (activeBetId != 0) revert CannotRotateMidBet();
         currentCommit = newGenesis;
         emit ChainRotated(newGenesis);
+    }
+
+    /// @notice Set the per-play stake burn rate, in basis points.
+    /// @dev Governance-only and bounded by MAX_BURN_RATE_BPS so the role can tune the
+    ///      deflation knob but cannot set a confiscatory rate.
+    /// @param newBps New burn rate in basis points (<= MAX_BURN_RATE_BPS).
+    function setBurnRate(uint256 newBps) external {
+        if (msg.sender != governance) revert NotGovernance();
+        if (newBps > MAX_BURN_RATE_BPS) revert BurnRateTooHigh();
+        burnRateBps = newBps;
+        emit BurnRateUpdated(newBps);
+    }
+
+    /// @notice Burn accumulated treasury profit, permanently shrinking the supply.
+    /// @dev Governance-only, only between bets, and only down to `TREASURY_FLOOR` — the
+    ///      balance above the floor is discretionary profit; the floor is the reserve
+    ///      the solvency cap depends on, so it can never be burned away.
+    /// @param amount Amount of RUSH to burn from the treasury.
+    function burnTreasuryProfit(uint256 amount) external {
+        if (msg.sender != governance) revert NotGovernance();
+        if (activeBetId != 0) revert BurnWhileBetActive();
+        if (treasuryBalance() < TREASURY_FLOOR + amount) revert BurnBelowFloor();
+        treasury.burn(amount);
+        emit TreasuryProfitBurned(amount);
     }
 }
