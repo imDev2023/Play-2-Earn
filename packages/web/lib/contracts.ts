@@ -17,9 +17,9 @@ export const RUSH_ADDRESS = (process.env.NEXT_PUBLIC_RUSH_ADDRESS ??
 export const EDGE_NUM = 95;
 export const EDGE_DEN = 100;
 
-/** Display label for a tier's winning multiplier, derived from odds (0.95 x N). */
+/** Display label for a tier's winning multiplier, derived from odds (0.95 × N). */
 export function multiplierLabel(odds: number): string {
-  return `${(EDGE_NUM * odds) / EDGE_DEN}x`;
+  return `${(EDGE_NUM * odds) / EDGE_DEN}×`;
 }
 
 /**
@@ -51,6 +51,22 @@ export const GAME_ABI = [
     stateMutability: "view",
     inputs: [{ name: "tier", type: "uint8" }],
     outputs: [{ type: "uint256" }],
+  },
+  {
+    // Public getter for the `bets` mapping — the authoritative tier/stake for a bet,
+    // read by the history so it never depends on catching the BetPlaced event.
+    type: "function",
+    name: "bets",
+    stateMutability: "view",
+    inputs: [{ name: "betId", type: "uint256" }],
+    outputs: [
+      { name: "player", type: "address" },
+      { name: "tier", type: "uint8" },
+      { name: "stake", type: "uint256" },
+      { name: "clientSeed", type: "uint256" },
+      { name: "placedAt", type: "uint256" },
+      { name: "settled", type: "bool" },
+    ],
   },
   {
     type: "function",
