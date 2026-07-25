@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { formatUnits, maxUint256, parseUnits } from "viem";
 import {
   useAccount,
+  useChainId,
   useConnect,
   useDisconnect,
   useReadContract,
@@ -12,7 +13,10 @@ import {
 } from "wagmi";
 import { readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../lib/wagmi";
+import { ACTIVE_CHAIN_ID } from "../lib/chain";
 import {
+  EDGE_DEN,
+  EDGE_NUM,
   GAME_ABI,
   GAME_ADDRESS,
   multiplierLabel,
@@ -20,6 +24,13 @@ import {
   RUSH_ADDRESS,
   TIERS,
 } from "../lib/contracts";
+import { useBetHistory } from "../lib/useBetHistory";
+import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
+import { OddsLadder } from "../components/OddsLadder";
+import { NetworkOnboarding } from "../components/NetworkOnboarding";
+import { BuyRush } from "../components/BuyRush";
+import { Reveal, type RevealPhase } from "../components/Reveal";
+import { BetHistory } from "../components/BetHistory";
 
 type Result = { win: boolean; payout: bigint };
 type Status = "idle" | "approving" | "placing" | "waiting" | "error";
@@ -32,6 +43,7 @@ function randomSeed(): bigint {
 
 export function PlayPanel() {
   const { address, isConnected } = useAccount();
+  const chainId = useChainId();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { writeContractAsync: writeAsync } = useWriteContract();
@@ -40,7 +52,14 @@ export function PlayPanel() {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tier, setTier] = useState(0);
+  // The tier of the bet currently settling — captured at placement so the reveal
+  // describes the settled bet, not whatever the ladder is showing now.
+  const [betTier, setBetTier] = useState(0);
   const [stakeInput, setStakeInput] = useState("100");
+
+  const wrongNetwork = isConnected && chainId !== ACTIVE_CHAIN_ID;
+
+  const { history } = useBetHistory(address);
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
     address: RUSH_ADDRESS,
@@ -74,6 +93,10 @@ export function PlayPanel() {
 
   const belowMin = stake !== null && minBet !== undefined && stake < minBet;
   const aboveMax = stake !== null && maxBet !== undefined && stake > maxBet;
+  const potentialWin = stake
+    ? (stake * BigInt(EDGE_NUM) * BigInt(TIERS[tier].odds)) / BigInt(EDGE_DEN)
+    : null;
+  const lowBalance = balance !== undefined && minBet !== undefined && balance < minBet;
 
   // Watch for this player's settlement and surface win/loss + payout.
   useWatchContractEvent({
@@ -98,11 +121,11 @@ export function PlayPanel() {
   });
 
   async function placeBet() {
-    if (!stake || belowMin || aboveMax) return;
+    if (!stake || belowMin || aboveMax || wrongNetwork) return;
     setError(null);
     setResult(null);
+    setBetTier(tier);
     try {
-      // Approve only when the standing allowance can't cover this stake.
       const allowance = address
         ? await readContract(wagmiConfig, {
             address: RUSH_ADDRESS,
@@ -134,145 +157,176 @@ export function PlayPanel() {
 
       setStatus("waiting"); // relayer settles; BetSettled resets to idle.
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readableError(err));
       setStatus("error");
     }
   }
 
   const busy = status === "approving" || status === "placing" || status === "waiting";
+  const revealPhase: RevealPhase =
+    status === "placing" || status === "waiting"
+      ? "drawing"
+      : result
+        ? result.win
+          ? "won"
+          : "lost"
+        : "idle";
 
   if (!isConnected) {
     return (
-      <section style={panel}>
-        <p>Connect a wallet to play.</p>
-        {connectors.map((connector) => (
-          <button
-            key={connector.uid}
-            data-testid={`connect-${connector.type}`}
-            style={button}
-            onClick={() => connect({ connector })}
-          >
-            Connect {connector.name}
-          </button>
-        ))}
-      </section>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <section style={{ ...panel, display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+          <span style={label}>Get in the game</span>
+          <p style={{ margin: 0, color: "var(--muted)" }}>
+            Connect a wallet to pick your odds and take a shot at the moonshot.
+          </p>
+          <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
+            {connectors.map((connector) => (
+              <button
+                key={connector.uid}
+                data-testid={`connect-${connector.type}`}
+                style={ghostButton}
+                onClick={() => connect({ connector })}
+              >
+                Connect {connector.name}
+              </button>
+            ))}
+          </div>
+        </section>
+        <section style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          <span style={label}>The ladder</span>
+          <OddsLadder selected={tier} onSelect={setTier} disabled />
+        </section>
+      </div>
     );
   }
 
   return (
-    <section style={panel}>
-      <p data-testid="account">
-        Connected: <code>{address}</code>
-      </p>
-      <p data-testid="balance">
-        Balance: {balance !== undefined ? `${formatUnits(balance, 18)} RUSH` : "—"}
-      </p>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.4rem" }}>
+      <div style={topBar}>
+        <span data-testid="balance" style={chip} className="mono">
+          {balance !== undefined ? `${formatUnits(balance, 18)} RUSH` : "… RUSH"}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <code data-testid="account" style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+            {address?.slice(0, 6)}…{address?.slice(-4)}
+          </code>
+          <button style={ghostButton} onClick={() => disconnect()}>
+            Disconnect
+          </button>
+        </div>
+      </div>
 
-      <label style={field}>
-        Odds tier
-        <select
-          data-testid="tier"
-          style={input}
-          value={tier}
-          disabled={busy}
-          onChange={(e) => setTier(Number(e.target.value))}
+      <NetworkOnboarding />
+
+      {revealPhase !== "idle" && (
+        <Reveal phase={revealPhase} tier={betTier} payout={result?.payout ?? 0n} />
+      )}
+
+      <section style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        <span style={label}>Pick your odds</span>
+        <OddsLadder selected={tier} onSelect={setTier} disabled={busy} />
+      </section>
+
+      <section style={{ ...panel, display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+        <label style={field}>
+          <span style={label}>Stake</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              data-testid="stake"
+              className="mono"
+              style={input}
+              type="number"
+              min="0"
+              value={stakeInput}
+              disabled={busy}
+              onChange={(e) => setStakeInput(e.target.value)}
+            />
+            <span style={{ color: "var(--muted)" }}>RUSH</span>
+          </div>
+        </label>
+
+        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
+          <span data-testid="bet-bounds" className="mono" style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+            {minBet !== undefined && maxBet !== undefined
+              ? `min ${formatUnits(minBet, 18)} · max ${formatUnits(maxBet, 18)}`
+              : "…"}
+          </span>
+          {potentialWin !== null && !belowMin && !aboveMax && (
+            <span data-testid="potential-win" className="mono" style={{ fontSize: "0.85rem" }}>
+              wins{" "}
+              <strong style={{ color: "var(--cool)" }}>
+                {formatUnits(potentialWin, 18)} RUSH
+              </strong>{" "}
+              at {multiplierLabel(TIERS[tier].odds)}
+            </span>
+          )}
+        </div>
+
+        <button
+          data-testid="place-bet"
+          style={primaryButton(busy || !stake || belowMin || aboveMax || wrongNetwork)}
+          disabled={busy || !stake || belowMin || aboveMax || wrongNetwork}
+          onClick={placeBet}
         >
-          {TIERS.map((t, i) => (
-            <option key={t.odds} value={i}>
-              {t.label} — 1-in-{t.odds} pays {multiplierLabel(t.odds)}
-            </option>
-          ))}
-        </select>
-      </label>
+          {wrongNetwork
+            ? "Switch network to play"
+            : busy
+              ? statusLabel(status)
+              : `Place bet · ${stake ? formatUnits(stake, 18) : "…"} RUSH`}
+        </button>
 
-      <label style={field}>
-        Stake (RUSH)
-        <input
-          data-testid="stake"
-          style={input}
-          type="number"
-          min="0"
-          value={stakeInput}
-          disabled={busy}
-          onChange={(e) => setStakeInput(e.target.value)}
-        />
-      </label>
-      <p data-testid="bet-bounds" style={{ fontSize: "0.8rem", color: "#666", margin: 0 }}>
-        {minBet !== undefined && maxBet !== undefined
-          ? `Min ${formatUnits(minBet, 18)} · Max ${formatUnits(maxBet, 18)} RUSH`
-          : "…"}
-      </p>
+        {(belowMin || aboveMax) && (
+          <p data-testid="bet-invalid" style={{ color: "var(--hot)", margin: 0, fontSize: "0.85rem" }}>
+            {belowMin ? "Stake is below the minimum bet." : "Stake exceeds the max for this tier."}
+          </p>
+        )}
+        {error && (
+          <p data-testid="error" style={{ color: "var(--hot)", margin: 0, fontSize: "0.85rem" }}>
+            {error}
+          </p>
+        )}
 
-      <button
-        data-testid="place-bet"
-        style={button}
-        disabled={busy || !stake || belowMin || aboveMax}
-        onClick={placeBet}
-      >
-        {busy
-          ? statusLabel(status)
-          : `Place bet (${stake ? formatUnits(stake, 18) : "…"} RUSH)`}
-      </button>
-      {(belowMin || aboveMax) && (
-        <p data-testid="bet-invalid" style={{ color: "crimson", margin: 0 }}>
-          {belowMin ? "Stake is below the minimum bet." : "Stake exceeds the max for this tier."}
-        </p>
-      )}
-      {result && (
-        <p data-testid="result" style={{ fontWeight: 700 }}>
-          {result.win
-            ? `You won! Payout ${formatUnits(result.payout, 18)} RUSH 🎉`
-            : "You lost this round."}
-        </p>
-      )}
-      {error && (
-        <p data-testid="error" style={{ color: "crimson" }}>
-          {error}
-        </p>
-      )}
-      <button style={{ ...button, background: "transparent", color: "#555" }} onClick={() => disconnect()}>
-        Disconnect
-      </button>
-    </section>
+        <BuyRush lowBalance={lowBalance} />
+      </section>
+
+      <BetHistory history={history} />
+    </div>
   );
 }
 
 function statusLabel(status: Status): string {
   if (status === "approving") return "Approving RUSH…";
   if (status === "placing") return "Placing bet…";
-  return "Waiting for settlement…";
+  return "Drawing…";
 }
 
-const panel: React.CSSProperties = {
+/** Trim noisy provider errors down to their first line for display. */
+function readableError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.split("\n")[0];
+}
+
+const topBar: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+};
+
+const field: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  gap: "0.75rem",
-  alignItems: "flex-start",
-  marginTop: "2rem",
+  gap: "0.35rem",
 };
 
-const field: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "0.25rem",
-  fontSize: "0.9rem",
-  color: "#333",
-};
-
-const input: React.CSSProperties = {
-  padding: "0.4rem 0.6rem",
-  fontSize: "1rem",
-  borderRadius: "0.4rem",
-  border: "1px solid #ccc",
-  minWidth: "16rem",
-};
-
-const button: React.CSSProperties = {
-  padding: "0.6rem 1.2rem",
-  fontSize: "1rem",
-  borderRadius: "0.5rem",
-  border: "1px solid #16a34a",
-  background: "#16a34a",
-  color: "white",
-  cursor: "pointer",
+const input: CSSProperties = {
+  padding: "0.55rem 0.7rem",
+  fontSize: "1.1rem",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--line)",
+  background: "var(--ink-2)",
+  color: "var(--text)",
+  width: "10rem",
 };

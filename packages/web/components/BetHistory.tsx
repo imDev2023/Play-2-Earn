@@ -1,0 +1,91 @@
+"use client";
+
+import type { CSSProperties } from "react";
+import { formatUnits } from "viem";
+import { multiplierLabel, TIERS } from "../lib/contracts";
+import type { BetEntry } from "../lib/useBetHistory";
+import { label } from "../lib/ui";
+
+/** The player's past plays, newest first, with outcome and payout. */
+export function BetHistory({ history }: { history: BetEntry[] }) {
+  return (
+    <section data-testid="history" style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+      <span style={label}>Your plays</span>
+      {history.length === 0 ? (
+        <p data-testid="history-empty" style={{ color: "var(--muted)", margin: 0, fontSize: "0.9rem" }}>
+          No plays yet. Pick a rung and take your shot.
+        </p>
+      ) : (
+        <ul style={list}>
+          {history.map((bet) => (
+            <li key={bet.betId.toString()} data-testid={`history-${bet.betId}`} style={row}>
+              <span style={{ display: "flex", flexDirection: "column", gap: "0.1rem" }}>
+                <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                  {TIERS[bet.tier]?.label ?? `Tier ${bet.tier}`}
+                  <span className="mono" style={{ color: "var(--muted)", marginLeft: "0.5rem" }}>
+                    {multiplierLabel(TIERS[bet.tier]?.odds ?? 1)}
+                  </span>
+                </span>
+                <span className="mono" style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
+                  {formatUnits(bet.stake, 18)} RUSH
+                </span>
+              </span>
+              <Outcome bet={bet} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function Outcome({ bet }: { bet: BetEntry }) {
+  if (bet.outcome === "pending") {
+    return (
+      <span className="mono" style={{ ...badge, color: "var(--muted)", borderColor: "var(--line)" }}>
+        pending
+      </span>
+    );
+  }
+  if (bet.outcome === "won") {
+    return (
+      <span className="mono" style={{ ...badge, color: "var(--win)", borderColor: "var(--win)" }}>
+        won +{formatUnits(bet.payout, 18)}
+      </span>
+    );
+  }
+  return (
+    <span className="mono" style={{ ...badge, color: "var(--loss)", borderColor: "var(--line)" }}>
+      lost
+    </span>
+  );
+}
+
+const list: CSSProperties = {
+  listStyle: "none",
+  margin: 0,
+  padding: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.4rem",
+};
+
+const row: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "1rem",
+  padding: "0.6rem 0.85rem",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--line-soft)",
+  background: "var(--panel)",
+};
+
+const badge: CSSProperties = {
+  fontSize: "0.8rem",
+  fontWeight: 700,
+  padding: "0.25rem 0.55rem",
+  borderRadius: "999px",
+  border: "1px solid",
+  whiteSpace: "nowrap",
+};
