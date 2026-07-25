@@ -5,48 +5,55 @@ import type { Address } from "viem";
 /**
  * Chain definitions and player-onboarding helpers.
  *
- * RUSHOOD's home is Robinhood Chain (mainnet 4663; testnet 46630). RPC/explorer
- * URLs are env-overridable placeholders until the real endpoints land with the
- * testnet/mainnet deploy (#26). Local development runs against a Hardhat node
- * (31337); `ACTIVE_CHAIN_ID` selects which chain the app expects a wallet to be
- * on, defaulting to Hardhat so the local play flow works out of the box.
+ * RUSHOOD's home is Robinhood Chain (mainnet 4663; testnet 46630). Local
+ * development runs against a Hardhat node (31337); `ACTIVE_CHAIN_ID` selects which
+ * chain the app expects a wallet to be on, defaulting to Hardhat so the local play
+ * flow works out of the box. All endpoints are env-overridable.
+ *
+ * Testnet endpoints are the real ones (docs.robinhood.com/chain). Uniswap v3 is
+ * deployed on Robinhood Chain — revisit the Buy-RUSH link target in #26 to point
+ * at that deployment (see developers.uniswap.org v3 robinhood-chain deployments).
  */
 
+// TODO(#26): mainnet RPC/explorer are still placeholders — the real Robinhood
+// Chain mainnet endpoints aren't published yet (docs.robinhood.com/chain). Fill
+// these in (or set the NEXT_PUBLIC_ROBINHOOD_* env vars) before any mainnet cutover.
 export const robinhoodChain = defineChain({
   id: 4663,
   name: "Robinhood Chain",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
     default: {
-      http: [process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ?? "https://rpc.robinhoodchain.org"],
+      http: [process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ?? "https://rpc.chain.robinhood.com/rpc"],
     },
   },
   blockExplorers: {
     default: {
       name: "Robinhood Explorer",
-      url: process.env.NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL ?? "https://explorer.robinhoodchain.org",
+      url: process.env.NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL ?? "https://explorer.chain.robinhood.com",
     },
   },
 });
 
 export const robinhoodTestnet = defineChain({
   id: 46630,
-  name: "Robinhood Testnet",
+  name: "Robinhood Chain Testnet",
   testnet: true,
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
     default: {
       http: [
-        process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL ?? "https://testnet-rpc.robinhoodchain.org",
+        process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL ??
+          "https://rpc.testnet.chain.robinhood.com/rpc",
       ],
     },
   },
   blockExplorers: {
     default: {
-      name: "Robinhood Testnet Explorer",
+      name: "Robinhood Chain Testnet Explorer",
       url:
         process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_EXPLORER_URL ??
-        "https://testnet-explorer.robinhoodchain.org",
+        "https://explorer.testnet.chain.robinhood.com",
     },
   },
 });
@@ -69,9 +76,13 @@ export const isLocalChain = activeChain.id === hardhat.id;
  */
 export function gasHelpUrl(chainId: number = ACTIVE_CHAIN_ID): string {
   if (chainId === robinhoodTestnet.id) {
-    return process.env.NEXT_PUBLIC_GAS_FAUCET_URL ?? "https://faucet.robinhoodchain.org";
+    return (
+      process.env.NEXT_PUBLIC_GAS_FAUCET_URL ??
+      "https://faucet.testnet.chain.robinhood.com/add-chain"
+    );
   }
-  return process.env.NEXT_PUBLIC_GAS_BRIDGE_URL ?? "https://bridge.robinhoodchain.org";
+  // TODO(#26): real mainnet bridge URL not published yet — placeholder for now.
+  return process.env.NEXT_PUBLIC_GAS_BRIDGE_URL ?? "https://bridge.chain.robinhood.com";
 }
 
 /**
