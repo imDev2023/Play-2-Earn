@@ -5,20 +5,25 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Treasury} from "./Treasury.sol";
 
-/// @title RushoodGame (walking skeleton)
-/// @notice The thinnest complete bet: one hardcoded tier, settled by an on-chain
-///         per-play commit-reveal hash chain.
+/// @title RushoodGame
+/// @notice One hardcoded tier settled by an on-chain per-play commit-reveal hash
+///         chain, with a relayer that settles automatically and a timeout refund
+///         that protects players if the relayer goes dark.
 /// @dev Flow:
-///      1. `placeBet(clientSeed)` locks a fixed stake into the treasury.
+///      1. `placeBet(clientSeed)` locks a fixed stake into the treasury and stamps
+///         the time.
 ///      2. The relayer calls `settleBet(reveal)` where keccak256(reveal) equals the
-///         current chain head. The outcome is derived from `reveal` + the player's
-///         `clientSeed`; a win pays `PAYOUT_MULTIPLIER x` stake from the treasury,
-///         a loss leaves the stake in the treasury.
-///      3. On success the chain advances (`currentCommit = reveal`), so the next
-///         reveal must hash to this one.
+///         current chain head, paying its own gas. The outcome is derived from
+///         `reveal` + the player's `clientSeed`; a win pays `PAYOUT_MULTIPLIER x`
+///         stake from the treasury, a loss leaves the stake in the treasury.
+///      3. On success the chain advances (`currentCommit = reveal`).
+///      4. If no relayer settles within `SETTLE_TIMEOUT`, the player can `refund`
+///         the locked stake. The relayer may `rotateChain` to a fresh chain (only
+///         between bets) before the current chain is exhausted.
 ///
-///      One bet is active at a time — the skeleton plays a single bet end-to-end.
-///      Multiple concurrent bets, odds tiers, and payout math deepen in later tickets.
+///      One bet is active at a time. Multiple concurrent bets, odds tiers, and
+///      payout math deepen in later tickets; the relayer role gains governance
+///      (multisig + timelock) in #22.
 contract RushoodGame {
     using SafeERC20 for IERC20;
 
@@ -26,6 +31,7 @@ contract RushoodGame {
         address player;
         uint256 stake;
         uint256 clientSeed;
+        uint256 placedAt;
         bool settled;
     }
 
@@ -35,11 +41,17 @@ contract RushoodGame {
     /// @notice Winning payout multiplier for the single hardcoded tier (zero-edge).
     uint256 public constant PAYOUT_MULTIPLIER = 2;
 
+    /// @notice How long an unsettled bet must wait before it can be refunded.
+    uint256 public constant SETTLE_TIMEOUT = 1 hours;
+
     /// @notice The RUSH token staked and paid out.
     IERC20 public immutable token;
 
     /// @notice The treasury that custodies stakes and funds payouts.
     Treasury public immutable treasury;
+
+    /// @notice Account authorized to rotate the server hash chain.
+    address public immutable relayer;
 
     /// @notice Head of the server hash chain: the next reveal must hash to this.
     bytes32 public currentCommit;
@@ -55,27 +67,42 @@ contract RushoodGame {
 
     event BetPlaced(uint256 indexed betId, address indexed player, uint256 stake, uint256 clientSeed);
     event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout);
+    event BetRefunded(uint256 indexed betId, address indexed player, uint256 amount);
+    event ChainRotated(bytes32 newCommit);
 
     /// @notice Thrown when the constructor is given the zero address as token.
     error TokenIsZeroAddress();
     /// @notice Thrown when the constructor is given the zero address as treasury.
     error TreasuryIsZeroAddress();
+    /// @notice Thrown when the constructor is given the zero address as relayer.
+    error RelayerIsZeroAddress();
     /// @notice Thrown when placing a bet while one is already active.
     error BetAlreadyActive();
+    /// @notice Thrown when rotating the chain while a bet is still active.
+    error CannotRotateMidBet();
     /// @notice Thrown when settling with no bet active.
     error NoActiveBet();
     /// @notice Thrown when the reveal does not hash to the current chain head.
     error InvalidReveal();
+    /// @notice Thrown when a non-relayer attempts to rotate the chain.
+    error NotRelayer();
+    /// @notice Thrown when refunding a bet id that is not the active, unsettled bet.
+    error NotRefundable();
+    /// @notice Thrown when refunding before the settle timeout has elapsed.
+    error RefundNotReady();
 
     /// @param token_ The RUSH token address.
     /// @param treasury_ The treasury holding stakes and funding payouts.
     /// @param initialCommit The genesis head of the server hash chain.
-    constructor(IERC20 token_, Treasury treasury_, bytes32 initialCommit) {
+    /// @param relayer_ The account authorized to rotate the chain.
+    constructor(IERC20 token_, Treasury treasury_, bytes32 initialCommit, address relayer_) {
         if (address(token_) == address(0)) revert TokenIsZeroAddress();
         if (address(treasury_) == address(0)) revert TreasuryIsZeroAddress();
+        if (relayer_ == address(0)) revert RelayerIsZeroAddress();
         token = token_;
         treasury = treasury_;
         currentCommit = initialCommit;
+        relayer = relayer_;
     }
 
     /// @notice Place the single active bet, locking the fixed stake into the treasury.
@@ -90,6 +117,7 @@ contract RushoodGame {
             player: msg.sender,
             stake: BET_AMOUNT,
             clientSeed: clientSeed,
+            placedAt: block.timestamp,
             settled: false
         });
 
@@ -116,9 +144,46 @@ contract RushoodGame {
             // treasury cannot cover the payout this reverts and the bet stays
             // active — acceptable for a funded skeleton; solvency caps that make
             // payouts always-affordable land in #20.
-            treasury.payWinnings(bet.player, payout);
+            treasury.pay(bet.player, payout);
         }
 
         emit BetSettled(betId, bet.player, win, payout);
+    }
+
+    /// @notice Refund the locked stake for a bet the relayer never settled.
+    /// @dev Callable by anyone once `SETTLE_TIMEOUT` has elapsed; the stake returns
+    ///      to the original player. The chain head does NOT advance — the reveal
+    ///      was never used, so it remains valid for the next bet.
+    ///
+    ///      Fairness caveat: if the relayer had broadcast `settleBet(reveal)` but the
+    ///      tx never confirmed before the timeout, that `reveal` is public in the
+    ///      mempool while the head still equals `keccak256(reveal)`. A watcher could
+    ///      then predict the next bet's outcome. The relayer therefore rotates the
+    ///      chain when it resumes after any downtime (see scripts/relayer.ts); a
+    ///      trust-minimised on-chain mitigation lands with governance in #22.
+    /// @param betId The active, unsettled bet to refund.
+    function refund(uint256 betId) external {
+        if (betId == 0 || betId != activeBetId) revert NotRefundable();
+
+        Bet storage bet = bets[betId];
+        if (block.timestamp < bet.placedAt + SETTLE_TIMEOUT) revert RefundNotReady();
+
+        bet.settled = true;
+        activeBetId = 0;
+
+        treasury.pay(bet.player, bet.stake);
+        emit BetRefunded(betId, bet.player, bet.stake);
+    }
+
+    /// @notice Rotate the server hash chain to a fresh genesis commit.
+    /// @dev Relayer-only and only between bets: an active bet's reveal lives on the
+    ///      current chain, so rotating mid-bet would strand it. Used to roll to a
+    ///      new chain before the current one is exhausted.
+    /// @param newGenesis The genesis head of the replacement chain.
+    function rotateChain(bytes32 newGenesis) external {
+        if (msg.sender != relayer) revert NotRelayer();
+        if (activeBetId != 0) revert CannotRotateMidBet();
+        currentCommit = newGenesis;
+        emit ChainRotated(newGenesis);
     }
 }
