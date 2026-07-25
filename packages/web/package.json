@@ -13,9 +13,12 @@
     "test:install": "playwright install chromium"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.101.2",
     "next": "^15.1.6",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "viem": "^2.55.2",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

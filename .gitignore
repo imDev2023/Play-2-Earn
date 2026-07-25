@@ -5,6 +5,7 @@ node_modules/
 packages/contracts/artifacts/
 packages/contracts/cache/
 packages/contracts/typechain-types/
+packages/contracts/deployments/
 
 # next.js
 packages/web/.next/

@@ -7,7 +7,10 @@
     "build": "hardhat compile",
     "test": "hardhat test",
     "typecheck": "hardhat compile && tsc --noEmit",
-    "lint": "solhint 'contracts/**/*.sol'"
+    "lint": "solhint 'contracts/**/*.sol'",
+    "node": "hardhat node",
+    "deploy:skeleton": "hardhat run scripts/deploy-skeleton.ts --network localhost",
+    "relayer": "hardhat run scripts/relayer.ts --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

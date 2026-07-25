@@ -4,6 +4,7 @@
     "compiler-version": ["error", "^0.8.24"],
     "func-visibility": ["warn", { "ignoreConstructors": true }],
     "not-rely-on-time": "off",
-    "import-path-check": "off"
+    "import-path-check": "off",
+    "immutable-vars-naming": ["warn", { "immutablesAsConstants": false }]
   }
 }
