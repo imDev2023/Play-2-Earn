@@ -1,9 +1,11 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-const RUSH_SUPPLY = 1_000_000_000n * 10n ** 18n;
+const COINFLIP_TIER = 0; // 1-in-2
 const BET_AMOUNT = 100n * 10n ** 18n;
-const PAYOUT_MULTIPLIER = 2n;
+// Coinflip payout is 0.95 x 2 = 1.9x (5% edge), not the old zero-edge 2x.
+const PAYOUT = (BET_AMOUNT * 95n * 2n) / 100n;
+const NET_WIN = PAYOUT - BET_AMOUNT; // player's net gain / treasury's net loss on a win
 const TREASURY_FUNDING = 100_000n * 10n ** 18n;
 const PLAYER_FUNDING = 1_000n * 10n ** 18n;
 
@@ -99,9 +101,9 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
     it("locks the stake into the treasury on placeBet", async () => {
       const { rush, treasury, game, player } = await deploy();
       const clientSeed = 42n;
-      await expect(game.connect(player).placeBet(clientSeed))
+      await expect(game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, clientSeed))
         .to.emit(game, "BetPlaced")
-        .withArgs(1n, player.address, BET_AMOUNT, clientSeed);
+        .withArgs(1n, player.address, COINFLIP_TIER, BET_AMOUNT, clientSeed);
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING - BET_AMOUNT);
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
         TREASURY_FUNDING + BET_AMOUNT,
@@ -111,28 +113,26 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
 
     it("rejects a second bet while one is active", async () => {
       const { game, player } = await deploy();
-      await game.connect(player).placeBet(1n);
-      await expect(game.connect(player).placeBet(2n)).to.be.revertedWithCustomError(
-        game,
-        "BetAlreadyActive",
-      );
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
+      await expect(
+        game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 2n),
+      ).to.be.revertedWithCustomError(game, "BetAlreadyActive");
     });
 
-    it("pays 2x from the treasury on a winning settle and advances the chain", async () => {
+    it("pays 1.9x (0.95 x 2) from the treasury on a winning settle and advances the chain", async () => {
       const { rush, treasury, game, player, relayer, reveals } = await deploy();
       const clientSeed = seedForOutcome(reveals.reveal1, true);
-      await game.connect(player).placeBet(clientSeed);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, clientSeed);
 
-      const payout = BET_AMOUNT * PAYOUT_MULTIPLIER;
       await expect(game.connect(relayer).settleBet(reveals.reveal1))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, true, payout);
+        .withArgs(1n, player.address, true, PAYOUT);
 
-      // Player: -stake on bet, +2*stake on win => net +stake.
-      expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING + BET_AMOUNT);
-      // Treasury: +stake on bet, -2*stake on payout => net -stake.
+      // Player: -stake on bet, +1.9*stake on win => net +0.9*stake.
+      expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING + NET_WIN);
+      // Treasury: +stake on bet, -1.9*stake on payout => net -0.9*stake.
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
-        TREASURY_FUNDING - BET_AMOUNT,
+        TREASURY_FUNDING - NET_WIN,
       );
       expect(await game.currentCommit()).to.equal(reveals.reveal1);
       expect(await game.activeBetId()).to.equal(0n);
@@ -141,7 +141,7 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
     it("keeps the stake in the treasury on a losing settle", async () => {
       const { rush, treasury, game, player, relayer, reveals } = await deploy();
       const clientSeed = seedForOutcome(reveals.reveal1, false);
-      await game.connect(player).placeBet(clientSeed);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, clientSeed);
 
       await expect(game.connect(relayer).settleBet(reveals.reveal1))
         .to.emit(game, "BetSettled")
@@ -156,10 +156,10 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
 
     it("supports a second round using the advanced chain head", async () => {
       const { game, player, relayer, reveals } = await deploy();
-      await game.connect(player).placeBet(1n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 1n);
       await game.connect(relayer).settleBet(reveals.reveal1);
       // Round 2: reveal2 hashes to reveal1 (the new head).
-      await game.connect(player).placeBet(2n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 2n);
       await expect(game.connect(relayer).settleBet(reveals.reveal2)).to.emit(
         game,
         "BetSettled",
@@ -171,7 +171,7 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
   describe("reveal verification", () => {
     it("reverts settle on a non-matching reveal and leaves the bet active", async () => {
       const { game, player, relayer } = await deploy();
-      await game.connect(player).placeBet(7n);
+      await game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 7n);
       const wrong = ethers.encodeBytes32String("not-the-reveal");
       await expect(game.connect(relayer).settleBet(wrong)).to.be.revertedWithCustomError(
         game,

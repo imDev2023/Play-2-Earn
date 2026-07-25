@@ -6,40 +6,70 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Treasury} from "./Treasury.sol";
 
 /// @title RushoodGame
-/// @notice One hardcoded tier settled by an on-chain per-play commit-reveal hash
-///         chain, with a relayer that settles automatically and a timeout refund
-///         that protects players if the relayer goes dark.
+/// @notice "Pick your odds" number-prediction game settled by an on-chain per-play
+///         commit-reveal hash chain. A player chooses one of six odds tiers
+///         (1-in-2 up to the 1-in-1000 moonshot) and a stake; every tier pays a flat
+///         5% house edge, and bet sizing keeps the house provably solvent.
 /// @dev Flow:
-///      1. `placeBet(clientSeed)` locks a fixed stake into the treasury and stamps
-///         the time.
+///      1. `placeBet(tier, stake, clientSeed)` locks `stake` into the treasury after
+///         enforcing the min bet, the per-tier solvency cap, and the treasury floor.
 ///      2. The relayer calls `settleBet(reveal)` where keccak256(reveal) equals the
-///         current chain head, paying its own gas. The outcome is derived from
-///         `reveal` + the player's `clientSeed`; a win pays `PAYOUT_MULTIPLIER x`
-///         stake from the treasury, a loss leaves the stake in the treasury.
+///         current chain head. The outcome is derived from `reveal` + the player's
+///         `clientSeed`; a win pays `payoutFor(tier, stake)` (= 0.95 x N x stake) from
+///         the treasury, a loss leaves the stake in the treasury.
 ///      3. On success the chain advances (`currentCommit = reveal`).
-///      4. If no relayer settles within `SETTLE_TIMEOUT`, the player can `refund`
-///         the locked stake. The relayer may `rotateChain` to a fresh chain (only
-///         between bets) before the current chain is exhausted.
+///      4. If no relayer settles within `SETTLE_TIMEOUT`, the player can `refund` the
+///         locked stake. The relayer may `rotateChain` (only between bets).
 ///
-///      One bet is active at a time. Multiple concurrent bets, odds tiers, and
-///      payout math deepen in later tickets; the relayer role gains governance
-///      (multisig + timelock) in #22.
+///      Economics:
+///      - Tier N is a 1-in-N shot: win when `keccak256(reveal, clientSeed) % N == 0`,
+///        so P(win) = 1/N. The winning payout is `0.95 * N * stake`, giving an
+///        expected return of `(1/N) * 0.95 * N = 0.95` on every tier — a flat 5% edge.
+///      - `maxPayout = 1% of the treasury balance`. The per-tier cap
+///        `maxBet(tier) = maxPayout / multiplier` guarantees any single win costs at
+///        most 1% of the pool, and because the stake is added to the treasury on
+///        `placeBet` (and no other bet can interleave — one bet is active at a time),
+///        a placed bet's payout is *always* affordable at settle time. This resolves
+///        the underfunded-treasury brick left open by the skeleton.
+///      - Below `TREASURY_FLOOR` the game pauses: no new bets are accepted until the
+///        pool is refilled.
+///
+///      One bet is active at a time (concurrency deepens later); the relayer role
+///      gains governance (multisig + timelock) in #22.
 contract RushoodGame {
     using SafeERC20 for IERC20;
 
     struct Bet {
         address player;
+        uint8 tier;
         uint256 stake;
         uint256 clientSeed;
         uint256 placedAt;
         bool settled;
     }
 
-    /// @notice Fixed stake for the single hardcoded tier.
-    uint256 public constant BET_AMOUNT = 100 * 1e18;
+    /// @notice Number of selectable odds tiers.
+    uint8 public constant TIER_COUNT = 6;
 
-    /// @notice Winning payout multiplier for the single hardcoded tier (zero-edge).
-    uint256 public constant PAYOUT_MULTIPLIER = 2;
+    /// @notice Payout numerator/denominator: winnings = stake * EDGE_NUM * N / EDGE_DEN.
+    ///         95/100 = 0.95, i.e. a 5% house edge on every tier.
+    uint256 public constant EDGE_NUM = 95;
+    uint256 public constant EDGE_DEN = 100;
+
+    /// @notice Solvency cap denominator: a single win may pay at most 1/CAP of the pool.
+    uint256 public constant SOLVENCY_CAP_DEN = 100; // 1% of treasury balance
+
+    /// @notice Smallest allowed stake.
+    uint256 public constant MIN_BET = 1e18;
+
+    /// @notice Below this treasury balance the game pauses (accepts no new bets).
+    /// @dev Set to `MIN_BET * EDGE_NUM * 1000` — the pool size at which the riskiest
+    ///      tier's (1-in-1000) minimum bet exactly saturates the 1% solvency cap:
+    ///      `maxBet(moonshot) == MIN_BET` here. At or above the floor every tier is
+    ///      therefore playable at a >= MIN_BET stake; below it the house is too thin
+    ///      to safely back the top tiers, so the game pauses rather than offer a bet
+    ///      it can't cover.
+    uint256 public constant TREASURY_FLOOR = 95_000 * 1e18;
 
     /// @notice How long an unsettled bet must wait before it can be refunded.
     uint256 public constant SETTLE_TIMEOUT = 1 hours;
@@ -65,7 +95,13 @@ contract RushoodGame {
     /// @notice All bets by id.
     mapping(uint256 => Bet) public bets;
 
-    event BetPlaced(uint256 indexed betId, address indexed player, uint256 stake, uint256 clientSeed);
+    event BetPlaced(
+        uint256 indexed betId,
+        address indexed player,
+        uint8 tier,
+        uint256 stake,
+        uint256 clientSeed
+    );
     event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout);
     event BetRefunded(uint256 indexed betId, address indexed player, uint256 amount);
     event ChainRotated(bytes32 newCommit);
@@ -76,8 +112,16 @@ contract RushoodGame {
     error TreasuryIsZeroAddress();
     /// @notice Thrown when the constructor is given the zero address as relayer.
     error RelayerIsZeroAddress();
+    /// @notice Thrown when a tier index is not in [0, TIER_COUNT).
+    error InvalidTier();
     /// @notice Thrown when placing a bet while one is already active.
     error BetAlreadyActive();
+    /// @notice Thrown when the stake is below MIN_BET.
+    error BetBelowMin();
+    /// @notice Thrown when the stake exceeds the per-tier solvency cap.
+    error ExceedsMaxBet();
+    /// @notice Thrown when the treasury balance is below the floor (game paused).
+    error TreasuryBelowFloor();
     /// @notice Thrown when rotating the chain while a bet is still active.
     error CannotRotateMidBet();
     /// @notice Thrown when settling with no bet active.
@@ -105,24 +149,73 @@ contract RushoodGame {
         relayer = relayer_;
     }
 
-    /// @notice Place the single active bet, locking the fixed stake into the treasury.
+    /// @notice The odds N for a tier: a 1-in-N shot.
+    /// @param tier Tier index in [0, TIER_COUNT).
+    /// @return The odds N (2, 4, 10, 50, 100, or 1000).
+    function odds(uint8 tier) public pure returns (uint256) {
+        if (tier == 0) return 2;
+        if (tier == 1) return 4;
+        if (tier == 2) return 10;
+        if (tier == 3) return 50;
+        if (tier == 4) return 100;
+        if (tier == 5) return 1000;
+        revert InvalidTier();
+    }
+
+    /// @notice The winning payout for a stake on a tier: 0.95 * N * stake.
+    /// @dev Integer division rounds the payout down (in the house's favour), so a win
+    ///      never pays more than the exact 0.95 x N x stake.
+    function payoutFor(uint8 tier, uint256 stake) public pure returns (uint256) {
+        return (stake * EDGE_NUM * odds(tier)) / EDGE_DEN;
+    }
+
+    /// @notice Current treasury balance backing payouts.
+    function treasuryBalance() public view returns (uint256) {
+        return token.balanceOf(address(treasury));
+    }
+
+    /// @notice The most a single win may pay: 1% of the treasury balance.
+    function maxPayout() public view returns (uint256) {
+        return treasuryBalance() / SOLVENCY_CAP_DEN;
+    }
+
+    /// @notice Largest stake allowed on a tier so its win stays within `maxPayout`.
+    /// @dev `maxBet = maxPayout / multiplier`. Expanded from that definition
+    ///      (`maxPayout = balance / SOLVENCY_CAP_DEN`, `multiplier = EDGE_NUM * N / EDGE_DEN`)
+    ///      it is `balance * EDGE_DEN / (SOLVENCY_CAP_DEN * EDGE_NUM * N)`, so it stays
+    ///      correct if the edge or the cap change. Integer division rounds down, which
+    ///      keeps `payoutFor(tier, maxBet) <= maxPayout` for every tier.
+    function maxBet(uint8 tier) public view returns (uint256) {
+        return (treasuryBalance() * EDGE_DEN) / (SOLVENCY_CAP_DEN * EDGE_NUM * odds(tier));
+    }
+
+    /// @notice Place the single active bet on a tier, locking `stake` into the treasury.
+    /// @param tier Odds tier in [0, TIER_COUNT).
+    /// @param stake Amount of RUSH to wager, within [MIN_BET, maxBet(tier)].
     /// @param clientSeed Player-supplied entropy mixed into the outcome.
     /// @return betId The id of the newly created bet.
-    function placeBet(uint256 clientSeed) external returns (uint256 betId) {
+    function placeBet(uint8 tier, uint256 stake, uint256 clientSeed) external returns (uint256 betId) {
         if (activeBetId != 0) revert BetAlreadyActive();
+        if (tier >= TIER_COUNT) revert InvalidTier();
+        if (treasuryBalance() < TREASURY_FLOOR) revert TreasuryBelowFloor();
+        if (stake < MIN_BET) revert BetBelowMin();
+        // Cap against the balance *before* this stake is added, so a win pays at most
+        // 1% of the pool the bet joined.
+        if (stake > maxBet(tier)) revert ExceedsMaxBet();
 
         betId = ++betCounter;
         activeBetId = betId;
         bets[betId] = Bet({
             player: msg.sender,
-            stake: BET_AMOUNT,
+            tier: tier,
+            stake: stake,
             clientSeed: clientSeed,
             placedAt: block.timestamp,
             settled: false
         });
 
-        token.safeTransferFrom(msg.sender, address(treasury), BET_AMOUNT);
-        emit BetPlaced(betId, msg.sender, BET_AMOUNT, clientSeed);
+        token.safeTransferFrom(msg.sender, address(treasury), stake);
+        emit BetPlaced(betId, msg.sender, tier, stake, clientSeed);
     }
 
     /// @notice Settle the active bet with the server reveal.
@@ -137,13 +230,13 @@ contract RushoodGame {
         activeBetId = 0;
         currentCommit = reveal;
 
-        bool win = uint256(keccak256(abi.encodePacked(reveal, bet.clientSeed))) % 2 == 0;
-        uint256 payout = win ? bet.stake * PAYOUT_MULTIPLIER : 0;
+        // 1-in-N: win when the outcome is congruent to 0 mod N. P(win) = 1/N.
+        bool win = uint256(keccak256(abi.encodePacked(reveal, bet.clientSeed))) % odds(bet.tier) == 0;
+        uint256 payout = win ? payoutFor(bet.tier, bet.stake) : 0;
         if (win) {
-            // Effects above the external call keep this reentrancy-safe. If the
-            // treasury cannot cover the payout this reverts and the bet stays
-            // active — acceptable for a funded skeleton; solvency caps that make
-            // payouts always-affordable land in #20.
+            // Effects above the external call keep this reentrancy-safe. The solvency
+            // cap enforced at placeBet guarantees the treasury (which also holds this
+            // bet's stake) can always cover `payout`, so this never bricks the game.
             treasury.pay(bet.player, payout);
         }
 

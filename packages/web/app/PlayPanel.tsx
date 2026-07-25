@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatUnits, maxUint256 } from "viem";
+import { formatUnits, maxUint256, parseUnits } from "viem";
 import {
   useAccount,
   useConnect,
@@ -12,7 +12,14 @@ import {
 } from "wagmi";
 import { readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../lib/wagmi";
-import { GAME_ABI, GAME_ADDRESS, RUSH_ABI, RUSH_ADDRESS } from "../lib/contracts";
+import {
+  GAME_ABI,
+  GAME_ADDRESS,
+  multiplierLabel,
+  RUSH_ABI,
+  RUSH_ADDRESS,
+  TIERS,
+} from "../lib/contracts";
 
 type Result = { win: boolean; payout: bigint };
 type Status = "idle" | "approving" | "placing" | "waiting" | "error";
@@ -32,6 +39,8 @@ export function PlayPanel() {
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tier, setTier] = useState(0);
+  const [stakeInput, setStakeInput] = useState("100");
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
     address: RUSH_ADDRESS,
@@ -41,11 +50,30 @@ export function PlayPanel() {
     query: { enabled: Boolean(address) },
   });
 
-  const { data: stake } = useReadContract({
+  const { data: minBet } = useReadContract({
     address: GAME_ADDRESS,
     abi: GAME_ABI,
-    functionName: "BET_AMOUNT",
+    functionName: "MIN_BET",
   });
+
+  const { data: maxBet } = useReadContract({
+    address: GAME_ADDRESS,
+    abi: GAME_ABI,
+    functionName: "maxBet",
+    args: [tier],
+  });
+
+  // Parse the stake input to wei; null when it isn't a valid positive amount.
+  let stake: bigint | null = null;
+  try {
+    const parsed = parseUnits(stakeInput || "0", 18);
+    stake = parsed > 0n ? parsed : null;
+  } catch {
+    stake = null;
+  }
+
+  const belowMin = stake !== null && minBet !== undefined && stake < minBet;
+  const aboveMax = stake !== null && maxBet !== undefined && stake > maxBet;
 
   // Watch for this player's settlement and surface win/loss + payout.
   useWatchContractEvent({
@@ -70,7 +98,7 @@ export function PlayPanel() {
   });
 
   async function placeBet() {
-    if (!stake) return;
+    if (!stake || belowMin || aboveMax) return;
     setError(null);
     setResult(null);
     try {
@@ -100,7 +128,7 @@ export function PlayPanel() {
         address: GAME_ADDRESS,
         abi: GAME_ABI,
         functionName: "placeBet",
-        args: [randomSeed()],
+        args: [tier, stake, randomSeed()],
       });
       await waitForTransactionReceipt(wagmiConfig, { hash: betHash });
 
@@ -139,11 +167,57 @@ export function PlayPanel() {
       <p data-testid="balance">
         Balance: {balance !== undefined ? `${formatUnits(balance, 18)} RUSH` : "—"}
       </p>
-      <button data-testid="place-bet" style={button} disabled={busy} onClick={placeBet}>
+
+      <label style={field}>
+        Odds tier
+        <select
+          data-testid="tier"
+          style={input}
+          value={tier}
+          disabled={busy}
+          onChange={(e) => setTier(Number(e.target.value))}
+        >
+          {TIERS.map((t, i) => (
+            <option key={t.odds} value={i}>
+              {t.label} — 1-in-{t.odds} pays {multiplierLabel(t.odds)}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label style={field}>
+        Stake (RUSH)
+        <input
+          data-testid="stake"
+          style={input}
+          type="number"
+          min="0"
+          value={stakeInput}
+          disabled={busy}
+          onChange={(e) => setStakeInput(e.target.value)}
+        />
+      </label>
+      <p data-testid="bet-bounds" style={{ fontSize: "0.8rem", color: "#666", margin: 0 }}>
+        {minBet !== undefined && maxBet !== undefined
+          ? `Min ${formatUnits(minBet, 18)} · Max ${formatUnits(maxBet, 18)} RUSH`
+          : "…"}
+      </p>
+
+      <button
+        data-testid="place-bet"
+        style={button}
+        disabled={busy || !stake || belowMin || aboveMax}
+        onClick={placeBet}
+      >
         {busy
           ? statusLabel(status)
           : `Place bet (${stake ? formatUnits(stake, 18) : "…"} RUSH)`}
       </button>
+      {(belowMin || aboveMax) && (
+        <p data-testid="bet-invalid" style={{ color: "crimson", margin: 0 }}>
+          {belowMin ? "Stake is below the minimum bet." : "Stake exceeds the max for this tier."}
+        </p>
+      )}
       {result && (
         <p data-testid="result" style={{ fontWeight: 700 }}>
           {result.win
@@ -175,6 +249,22 @@ const panel: React.CSSProperties = {
   gap: "0.75rem",
   alignItems: "flex-start",
   marginTop: "2rem",
+};
+
+const field: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.25rem",
+  fontSize: "0.9rem",
+  color: "#333",
+};
+
+const input: React.CSSProperties = {
+  padding: "0.4rem 0.6rem",
+  fontSize: "1rem",
+  borderRadius: "0.4rem",
+  border: "1px solid #ccc",
+  minWidth: "16rem",
 };
 
 const button: React.CSSProperties = {
