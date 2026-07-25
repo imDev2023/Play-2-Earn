@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import { formatUnits } from "viem";
 import { multiplierLabel, TIERS } from "../lib/contracts";
+import { verifyHref, verifyInputsFor } from "../lib/fairness";
 import type { BetEntry } from "../lib/useBetHistory";
 import { label } from "../lib/ui";
 
@@ -23,19 +24,40 @@ export function BetHistory({ history }: { history: BetEntry[] }) {
                 <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>
                   {TIERS[bet.tier]?.label ?? `Tier ${bet.tier}`}
                   <span className="mono" style={{ color: "var(--muted)", marginLeft: "0.5rem" }}>
-                    {multiplierLabel(TIERS[bet.tier]?.odds ?? 1)}
+                    {multiplierLabel(bet.tier)}
                   </span>
                 </span>
                 <span className="mono" style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
                   {formatUnits(bet.stake, 18)} RUSH
                 </span>
               </span>
-              <Outcome bet={bet} />
+              <span style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <Verify bet={bet} />
+                <Outcome bet={bet} />
+              </span>
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+/** Per-row escape hatch into the public verifier — every past roll is checkable, not
+ *  just the latest one shown in the fairness panel. */
+function Verify({ bet }: { bet: BetEntry }) {
+  const inputs = verifyInputsFor(bet);
+  if (!inputs) return null;
+  return (
+    <a
+      data-testid={`verify-${bet.betId}`}
+      href={verifyHref(inputs)}
+      target="_blank"
+      rel="noreferrer"
+      style={verifyLink}
+    >
+      verify
+    </a>
   );
 }
 
@@ -79,6 +101,13 @@ const row: CSSProperties = {
   borderRadius: "var(--radius-sm)",
   border: "1px solid var(--line-soft)",
   background: "var(--panel)",
+};
+
+const verifyLink: CSSProperties = {
+  fontSize: "0.78rem",
+  color: "var(--muted)",
+  textDecoration: "underline",
+  textUnderlineOffset: "3px",
 };
 
 const badge: CSSProperties = {

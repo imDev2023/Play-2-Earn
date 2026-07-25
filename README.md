@@ -9,6 +9,7 @@ A mainnet, real-value **Play-to-Earn "pick your odds" number-prediction game** o
 | Package | Stack | Purpose |
 |---|---|---|
 | `packages/contracts` | Solidity + Hardhat | RUSH token, game, treasury, randomness verifier |
+| `packages/verifier` | TypeScript (no deps but viem) | Public fairness verifier + `verify` CLI |
 | `packages/web` | Next.js + wagmi + Playwright | Player app + admin console |
 
 ## Getting started
@@ -56,6 +57,27 @@ unsettled past `SETTLE_TIMEOUT` (1 hour) can be reclaimed on-chain via `refund(b
 
 The single hardcoded tier, single-active-bet flow, and reproducible dev seed are skeleton
 simplifications — odds tiers, payout math, and governance over the relayer deepen in later tickets.
+
+## Verifying a roll (#24)
+
+Every settled roll is recomputable by anyone from data the chain publishes. `BetPlaced`
+carries the commitment the bet was locked against, `BetSettled` carries the reveal and
+the roll, and `RushoodGame.bets(betId)` holds the whole set — no archive node, no
+indexer, no trusting this app.
+
+- **In the app** — the fairness panel shows the commitment, your own entropy, and the
+  reveal, and links to `/verify` with every input baked into the URL.
+- **In a browser** — `/verify` recomputes the draw locally. Nothing is sent anywhere; the
+  page works with no wallet and no chain.
+- **On the command line** — the same links work verbatim:
+
+  ```bash
+  npm run verify --workspace @rushood/verifier -- --url "<paste a verify link>"
+  ```
+
+The formula lives in `RushoodGame.outcomeOf` (a `public pure` function `settleBet`
+itself calls) and in [`@rushood/verifier`](packages/verifier/README.md); the contract
+suite's `test/Fairness.ts` pins the two implementations together, so they can't drift.
 
 ## Status
 

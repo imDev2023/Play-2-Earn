@@ -28,6 +28,9 @@ jobs:
       - name: Build (compile contracts + next build)
         run: npm run build
 
+      - name: Verifier tests
+        run: npm test --workspace @rushood/verifier
+
       - name: Contract tests
         run: npm test --workspace @rushood/contracts
 

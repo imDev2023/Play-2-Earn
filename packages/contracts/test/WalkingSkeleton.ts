@@ -1,5 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { seedForOutcome as seedFor } from "@rushood/verifier";
+import type { Hex } from "@rushood/verifier";
 
 const COINFLIP_TIER = 0; // 1-in-2
 const BET_AMOUNT = 100n * 10n ** 18n;
@@ -10,20 +12,16 @@ const BURN = (BET_AMOUNT * 250n) / 10_000n; // 2.5% of the stake burned on settl
 const TREASURY_FUNDING = 100_000n * 10n ** 18n;
 const PLAYER_FUNDING = 1_000n * 10n ** 18n;
 
-/** Mirror of the on-chain outcome: win when keccak256(reveal, clientSeed) is even. */
-function isWin(reveal: string, clientSeed: bigint): boolean {
-  const outcome = BigInt(
-    ethers.keccak256(ethers.solidityPacked(["bytes32", "uint256"], [reveal, clientSeed])),
+/**
+ * Smallest clientSeed producing the desired win/loss for a reveal on the coinflip.
+ * Delegates to the public verifier so the tests and the game share one formula (#24).
+ */
+function seedForOutcome(reveal: string, wantWin: boolean, betId = 1n): bigint {
+  return seedFor(
+    { betId, tier: COINFLIP_TIER, serverReveal: reveal as Hex },
+    wantWin,
+    1000n,
   );
-  return outcome % 2n === 0n;
-}
-
-/** Smallest clientSeed (from 0) producing the desired win/loss for a reveal. */
-function seedForOutcome(reveal: string, wantWin: boolean): bigint {
-  for (let i = 0n; i < 1000n; i++) {
-    if (isWin(reveal, i) === wantWin) return i;
-  }
-  throw new Error("no seed found");
 }
 
 describe("Walking skeleton — Treasury + RushoodGame", () => {
@@ -100,11 +98,11 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
 
   describe("bet lifecycle", () => {
     it("locks the stake into the treasury on placeBet", async () => {
-      const { rush, treasury, game, player } = await deploy();
+      const { rush, treasury, game, player, reveals } = await deploy();
       const clientSeed = 42n;
       await expect(game.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, clientSeed))
         .to.emit(game, "BetPlaced")
-        .withArgs(1n, player.address, COINFLIP_TIER, BET_AMOUNT, clientSeed);
+        .withArgs(1n, player.address, COINFLIP_TIER, BET_AMOUNT, clientSeed, reveals.commit0);
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING - BET_AMOUNT);
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
         TREASURY_FUNDING + BET_AMOUNT,
@@ -127,7 +125,9 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
 
       await expect(game.connect(relayer).settleBet(reveals.reveal1))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, true, PAYOUT);
+        // A coinflip win is a roll of 0; the reveal is published alongside it so the
+        // draw is publicly recomputable (#24).
+        .withArgs(1n, player.address, true, PAYOUT, reveals.reveal1, 0n);
 
       // Player: -stake on bet, +1.9*stake on win => net +0.9*stake (burn is treasury-side).
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING + NET_WIN);
@@ -146,7 +146,8 @@ describe("Walking skeleton — Treasury + RushoodGame", () => {
 
       await expect(game.connect(relayer).settleBet(reveals.reveal1))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, false, 0n);
+        // A coinflip loss is the only other roll in range: 1.
+        .withArgs(1n, player.address, false, 0n, reveals.reveal1, 1n);
 
       expect(await rush.balanceOf(player.address)).to.equal(PLAYER_FUNDING - BET_AMOUNT);
       // Treasury keeps the stake less the 2.5% burn (#21 deflation).

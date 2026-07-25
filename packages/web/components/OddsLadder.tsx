@@ -64,7 +64,7 @@ export function OddsLadder({
                 textShadow: isMoonshot ? "0 0 20px rgba(255,61,139,0.55)" : "none",
               }}
             >
-              {multiplierLabel(tier.odds)}
+              {multiplierLabel(index)}
             </span>
           </button>
         );

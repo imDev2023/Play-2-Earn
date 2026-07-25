@@ -1,4 +1,5 @@
 import type { Address } from "viem";
+import { TIER_ODDS } from "@rushood/verifier";
 
 /**
  * Contract addresses for the walking skeleton.
@@ -13,28 +14,24 @@ export const GAME_ADDRESS = (process.env.NEXT_PUBLIC_GAME_ADDRESS ??
 export const RUSH_ADDRESS = (process.env.NEXT_PUBLIC_RUSH_ADDRESS ??
   "0x5FbDB2315678afecb367f032d93F642f64180aa3") as Address;
 
-/** Payout numerator/denominator, mirroring RushoodGame's EDGE_NUM/EDGE_DEN. */
-export const EDGE_NUM = 95;
-export const EDGE_DEN = 100;
-
-/** Display label for a tier's winning multiplier, derived from odds (0.95 × N). */
-export function multiplierLabel(odds: number): string {
-  return `${(EDGE_NUM * odds) / EDGE_DEN}×`;
-}
+/**
+ * Payout numerator/denominator and the tier multiplier label both come from the public
+ * verifier, so the play UI and the `/verify` page can never quote different payouts —
+ * they read the same table the fairness check does.
+ */
+export { EDGE_NUM, EDGE_DEN, multiplierLabel } from "@rushood/verifier";
 
 /**
  * The six odds tiers, mirroring RushoodGame.odds(). Tier N is a 1-in-N shot paying
- * a flat 0.95 x N (5% house edge). Index === on-chain tier id. The multiplier is
- * derived from `odds` (see multiplierLabel) rather than duplicated as a literal.
+ * a flat 0.95 x N (5% house edge). Index === on-chain tier id. Only the display label
+ * lives here; the odds and multiplier come from the verifier's table.
  */
-export const TIERS = [
-  { odds: 2, label: "Coin flip" },
-  { odds: 4, label: "1-in-4" },
-  { odds: 10, label: "1-in-10" },
-  { odds: 50, label: "1-in-50" },
-  { odds: 100, label: "1-in-100" },
-  { odds: 1000, label: "Moonshot" },
-] as const;
+const TIER_LABELS = ["Coin flip", "1-in-4", "1-in-10", "1-in-50", "1-in-100", "Moonshot"];
+
+export const TIERS = TIER_ODDS.map((odds, index) => ({
+  odds: Number(odds),
+  label: TIER_LABELS[index],
+}));
 
 /** Minimal ABI for the pieces of RushoodGame the skeleton UI touches. */
 export const GAME_ABI = [
@@ -53,8 +50,10 @@ export const GAME_ABI = [
     outputs: [{ type: "uint256" }],
   },
   {
-    // Public getter for the `bets` mapping — the authoritative tier/stake for a bet,
-    // read by the history so it never depends on catching the BetPlaced event.
+    // Public getter for the `bets` mapping — the authoritative record for a bet, read
+    // by the history so it never depends on catching the BetPlaced event. Since #24 it
+    // also carries `commit` and `reveal`, so one call yields the complete set of
+    // inputs a fairness check needs.
     type: "function",
     name: "bets",
     stateMutability: "view",
@@ -66,7 +65,18 @@ export const GAME_ABI = [
       { name: "clientSeed", type: "uint256" },
       { name: "placedAt", type: "uint256" },
       { name: "settled", type: "bool" },
+      { name: "commit", type: "bytes32" },
+      { name: "reveal", type: "bytes32" },
     ],
+  },
+  {
+    // The standing head of the server hash chain: what the *next* bet will be locked
+    // against. Shown before a bet so a player can record the commitment themselves.
+    type: "function",
+    name: "currentCommit",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "bytes32" }],
   },
   {
     type: "function",
@@ -88,6 +98,7 @@ export const GAME_ABI = [
       { name: "tier", type: "uint8", indexed: false },
       { name: "stake", type: "uint256", indexed: false },
       { name: "clientSeed", type: "uint256", indexed: false },
+      { name: "commit", type: "bytes32", indexed: false },
     ],
   },
   {
@@ -98,6 +109,8 @@ export const GAME_ABI = [
       { name: "player", type: "address", indexed: true },
       { name: "win", type: "bool", indexed: false },
       { name: "payout", type: "uint256", indexed: false },
+      { name: "reveal", type: "bytes32", indexed: false },
+      { name: "roll", type: "uint256", indexed: false },
     ],
   },
 ] as const;
