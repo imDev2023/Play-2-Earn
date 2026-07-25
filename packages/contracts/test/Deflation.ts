@@ -247,7 +247,7 @@ describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
 
     it("rejects a profit-burn that would drop the treasury below the floor", async () => {
       const { game, deployer } = await deploy();
-      const floor = (await game.TREASURY_FLOOR()) as bigint;
+      const floor = (await game.treasuryFloor()) as bigint;
       const overBurn = TREASURY_FUNDING - floor + 1n; // one wei past the floor
       await expect(
         game.connect(deployer).burnTreasuryProfit(overBurn),

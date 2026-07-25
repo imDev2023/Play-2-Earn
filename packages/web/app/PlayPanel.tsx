@@ -53,7 +53,7 @@ export function PlayPanel() {
   const { data: minBet } = useReadContract({
     address: GAME_ADDRESS,
     abi: GAME_ABI,
-    functionName: "MIN_BET",
+    functionName: "minBet",
   });
 
   const { data: maxBet } = useReadContract({

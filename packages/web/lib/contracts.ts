@@ -40,7 +40,7 @@ export const TIERS = [
 export const GAME_ABI = [
   {
     type: "function",
-    name: "MIN_BET",
+    name: "minBet",
     stateMutability: "view",
     inputs: [],
     outputs: [{ type: "uint256" }],

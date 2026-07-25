@@ -124,7 +124,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
   describe("bet sizing (min / max)", () => {
     it("rejects a stake below MIN_BET", async () => {
       const { game, player } = await deploy();
-      expect(await game.MIN_BET()).to.equal(MIN_BET);
+      expect(await game.minBet()).to.equal(MIN_BET);
       await expect(
         game.connect(player).placeBet(0, MIN_BET - 1n, 1n),
       ).to.be.revertedWithCustomError(game, "BetBelowMin");
@@ -208,7 +208,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
   describe("solvency: floor + depletion", () => {
     it("pauses (rejects all bets) when the treasury is below the floor", async () => {
       const { game, player } = await deploy(TREASURY_FLOOR - 1n);
-      expect(await game.TREASURY_FLOOR()).to.equal(TREASURY_FLOOR);
+      expect(await game.treasuryFloor()).to.equal(TREASURY_FLOOR);
       await expect(
         game.connect(player).placeBet(0, MIN_BET, 1n),
       ).to.be.revertedWithCustomError(game, "TreasuryBelowFloor");
