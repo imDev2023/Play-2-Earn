@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (compile contracts + next build)
+        run: npm run build
+
+      - name: Contract tests
+        run: npm test --workspace @rushood/contracts
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/web
+
+      - name: Web E2E tests
+        run: npm test --workspace @rushood/web
