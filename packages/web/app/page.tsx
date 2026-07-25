@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { PlayPanel } from "./PlayPanel";
 
 export default function Home() {
@@ -20,6 +21,10 @@ export default function Home() {
       <PlayPanel />
       <footer style={footer}>
         Flat 5% house edge · solvent by construction · every roll verified on-chain.
+        <br />
+        <Link data-testid="verify-nav" href="/verify" style={footerLink}>
+          Check any roll yourself →
+        </Link>
       </footer>
     </main>
   );
@@ -63,4 +68,10 @@ const footer: CSSProperties = {
   textAlign: "center",
   borderTop: "1px solid var(--line-soft)",
   paddingTop: "1.25rem",
+  lineHeight: 2,
+};
+
+const footerLink: CSSProperties = {
+  color: "var(--cool)",
+  textDecoration: "none",
 };

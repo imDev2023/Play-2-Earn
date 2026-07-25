@@ -18,13 +18,16 @@ import {Treasury} from "./Treasury.sol";
 ///         current chain head. The outcome is derived from `reveal` + the player's
 ///         `clientSeed`; a win pays `payoutFor(tier, stake)` (= 0.95 x N x stake) from
 ///         the treasury, a loss leaves the stake in the treasury.
-///      3. On success the chain advances (`currentCommit = reveal`).
+///      3. On success the chain advances (`currentCommit = reveal`). Every input the
+///         draw consumed is published — the commitment on `BetPlaced`, the reveal and
+///         roll on `BetSettled`, and all of it readable from `bets(betId)` — so anyone
+///         can re-run `outcomeOf` and confirm the result (#24).
 ///      4. If no relayer settles within `SETTLE_TIMEOUT`, the player can `refund` the
 ///         locked stake. The relayer may `rotateChain` (only between bets).
 ///
 ///      Economics:
-///      - Tier N is a 1-in-N shot: win when `keccak256(reveal, clientSeed) % N == 0`,
-///        so P(win) = 1/N. The winning payout is `0.95 * N * stake`, giving an
+///      - Tier N is a 1-in-N shot: win when `keccak256(reveal, clientSeed, betId) % N == 0`
+///        (see `outcomeOf`), so P(win) = 1/N. The winning payout is `0.95 * N * stake`, giving an
 ///        expected return of `(1/N) * 0.95 * N = 0.95` on every tier — a flat 5% edge.
 ///      - `maxPayout = 1% of the treasury balance`. The per-tier cap
 ///        `maxBet(tier) = maxPayout / multiplier` guarantees any single win costs at
@@ -60,6 +63,14 @@ contract RushoodGame is Pausable {
         uint256 clientSeed;
         uint256 placedAt;
         bool settled;
+        /// @dev Chain head this bet is locked against — the server's commitment,
+        ///      published before the bet existed. Stored (not just emitted) so the
+        ///      whole verification input set is readable from `bets(betId)` forever,
+        ///      without an archive node or an indexer (#24).
+        bytes32 commit;
+        /// @dev The reveal that settled this bet; zero until settled (a refund also
+        ///      leaves it zero, since no reveal was consumed).
+        bytes32 reveal;
     }
 
     /// @notice Number of selectable odds tiers.
@@ -148,14 +159,27 @@ contract RushoodGame is Pausable {
     /// @notice All bets by id.
     mapping(uint256 => Bet) public bets;
 
+    /// @param commit The server commitment this bet is locked against. Together with
+    ///        the `reveal` in `BetSettled` it lets anyone re-run the whole draw from
+    ///        events alone — see `outcomeOf` and the public verifier.
     event BetPlaced(
         uint256 indexed betId,
         address indexed player,
         uint8 tier,
         uint256 stake,
-        uint256 clientSeed
+        uint256 clientSeed,
+        bytes32 commit
     );
-    event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout);
+    /// @param reveal The server's pre-image of the bet's commitment.
+    /// @param roll The draw reduced to the tier's range; a win is a roll of 0.
+    event BetSettled(
+        uint256 indexed betId,
+        address indexed player,
+        bool win,
+        uint256 payout,
+        bytes32 reveal,
+        uint256 roll
+    );
     event StakeBurned(uint256 indexed betId, uint256 amount);
     event BetRefunded(uint256 indexed betId, address indexed player, uint256 amount);
     event ChainRotated(bytes32 newCommit);
@@ -291,6 +315,34 @@ contract RushoodGame is Pausable {
         return (stake * edgeNum * odds(tier)) / edgeDen;
     }
 
+    /// @notice Recompute a draw from its public inputs — the game's fairness formula,
+    ///         callable by anyone.
+    /// @dev This is *the* outcome rule: `settleBet` calls it rather than repeating the
+    ///      arithmetic, so the number the game settles on and the number a skeptic
+    ///      recomputes come from one implementation. The public verifier package
+    ///      mirrors it off-chain and its test suite pins the two together.
+    ///
+    ///      Neither party can grind the draw. The server's `reveal` is fixed before the
+    ///      bet exists (only its hash is public — the standing commitment), and the
+    ///      player's `clientSeed` is fixed at bet time, before the reveal is public.
+    ///      Mixing `betId` in domain-separates bets, so an outcome can never be replayed
+    ///      onto another bet — relevant after a refund, which deliberately leaves the
+    ///      chain head unadvanced.
+    /// @param reveal The server's pre-image of the bet's commitment.
+    /// @param clientSeed The player's entropy, fixed at bet time.
+    /// @param betId The bet's id.
+    /// @param tier Odds tier in [0, TIER_COUNT).
+    /// @return roll The draw reduced to the tier's range, in [0, N).
+    /// @return win True when `roll == 0` — a 1-in-N event.
+    function outcomeOf(bytes32 reveal, uint256 clientSeed, uint256 betId, uint8 tier)
+        public
+        pure
+        returns (uint256 roll, bool win)
+    {
+        roll = uint256(keccak256(abi.encodePacked(reveal, clientSeed, betId))) % odds(tier);
+        win = roll == 0;
+    }
+
     /// @notice Current treasury balance backing payouts.
     function treasuryBalance() public view returns (uint256) {
         return token.balanceOf(address(treasury));
@@ -333,17 +385,23 @@ contract RushoodGame is Pausable {
 
         betId = ++betCounter;
         activeBetId = betId;
+        // Pin the commitment the bet is locked against at placement time, so the
+        // player's proof that the server committed *before* the draw survives the
+        // head advancing on every later settlement.
+        bytes32 commit = currentCommit;
         bets[betId] = Bet({
             player: msg.sender,
             tier: tier,
             stake: stake,
             clientSeed: clientSeed,
             placedAt: block.timestamp,
-            settled: false
+            settled: false,
+            commit: commit,
+            reveal: bytes32(0)
         });
 
         token.safeTransferFrom(msg.sender, address(treasury), stake);
-        emit BetPlaced(betId, msg.sender, tier, stake, clientSeed);
+        emit BetPlaced(betId, msg.sender, tier, stake, clientSeed, commit);
     }
 
     /// @notice Settle the active bet with the server reveal.
@@ -356,11 +414,14 @@ contract RushoodGame is Pausable {
 
         Bet storage bet = bets[betId];
         bet.settled = true;
+        bet.reveal = reveal;
         activeBetId = 0;
         currentCommit = reveal;
 
-        // 1-in-N: win when the outcome is congruent to 0 mod N. P(win) = 1/N.
-        bool win = uint256(keccak256(abi.encodePacked(reveal, bet.clientSeed))) % odds(bet.tier) == 0;
+        // 1-in-N: win when the draw lands on 0. P(win) = 1/N. The rule lives in the
+        // public `outcomeOf` so the settled result and any independent recomputation
+        // come from the same implementation (#24).
+        (uint256 roll, bool win) = outcomeOf(reveal, bet.clientSeed, betId, bet.tier);
         uint256 payout = win ? payoutFor(bet.tier, bet.stake) : 0;
         // Deflation: a slice of every settled stake is burned regardless of outcome,
         // so totalSupply only ever falls as the game is played. Tiny next to the 1%
@@ -372,7 +433,7 @@ contract RushoodGame is Pausable {
             // bet's stake) can always cover `payout`, so this never bricks the game.
             treasury.pay(bet.player, payout);
         }
-        emit BetSettled(betId, bet.player, win, payout);
+        emit BetSettled(betId, bet.player, win, payout, reveal, roll);
 
         // Burn last: it runs on every settled play (win or loss) but after the payout,
         // so it can never starve a win. A zero rate simply skips it.

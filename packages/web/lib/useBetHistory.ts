@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { parseAbiItem, type Address } from "viem";
+import { parseAbiItem, type Address, type Hex } from "viem";
 import { getPublicClient, readContract } from "wagmi/actions";
 import { useWatchContractEvent } from "wagmi";
 import { wagmiConfig } from "./wagmi";
@@ -15,41 +15,55 @@ export interface BetEntry {
   stake: bigint;
   outcome: BetOutcome;
   payout: bigint;
+  /** The player's entropy for this bet. Undefined until hydrated from chain. */
+  clientSeed?: bigint;
+  /** The commitment this bet was locked against (#24). */
+  commit?: Hex;
+  /** The reveal that settled it; absent while pending. */
+  reveal?: Hex;
+  /** The roll the chain reported, to cross-check a local recomputation against. */
+  roll?: bigint;
 }
 
 const BET_PLACED = parseAbiItem(
-  "event BetPlaced(uint256 indexed betId, address indexed player, uint8 tier, uint256 stake, uint256 clientSeed)",
+  "event BetPlaced(uint256 indexed betId, address indexed player, uint8 tier, uint256 stake, uint256 clientSeed, bytes32 commit)",
 );
 const BET_SETTLED = parseAbiItem(
-  "event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout)",
+  "event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout, bytes32 reveal, uint256 roll)",
 );
 
 type Draft = Map<string, BetEntry>;
 
-function place(draft: Draft, betId: bigint, tier: number, stake: bigint): Draft {
+function place(draft: Draft, betId: bigint, args: LogArgs): Draft {
   const key = betId.toString();
   const next = new Map(draft);
   const existing = next.get(key);
   next.set(key, {
+    ...existing,
     betId,
-    tier,
-    stake,
+    tier: Number(args.tier ?? 0),
+    stake: args.stake ?? 0n,
     outcome: existing?.outcome ?? "pending",
     payout: existing?.payout ?? 0n,
+    clientSeed: args.clientSeed ?? existing?.clientSeed,
+    commit: args.commit ?? existing?.commit,
   });
   return next;
 }
 
-function settle(draft: Draft, betId: bigint, win: boolean, payout: bigint): Draft {
+function settle(draft: Draft, betId: bigint, args: LogArgs): Draft {
   const key = betId.toString();
   const next = new Map(draft);
   const existing = next.get(key);
   next.set(key, {
+    ...existing,
     betId,
     tier: existing?.tier ?? 0,
     stake: existing?.stake ?? 0n,
-    outcome: win ? "won" : "lost",
-    payout,
+    outcome: args.win ? "won" : "lost",
+    payout: args.payout ?? 0n,
+    reveal: args.reveal ?? existing?.reveal,
+    roll: args.roll ?? existing?.roll,
   });
   return next;
 }
@@ -59,8 +73,12 @@ type LogArgs = {
   player?: string;
   tier?: number;
   stake?: bigint;
+  clientSeed?: bigint;
+  commit?: Hex;
   win?: boolean;
   payout?: bigint;
+  reveal?: Hex;
+  roll?: bigint;
 };
 
 /**
@@ -95,8 +113,10 @@ function foldPlayerLogs(
 export function useBetHistory(address: Address | undefined) {
   const [drafts, setDrafts] = useState<Draft>(new Map());
 
-  // Read the authoritative tier/stake for a bet from chain state, so a row is
-  // correct even if its BetPlaced event was missed or arrived after settlement.
+  // Read the authoritative record for a bet from chain state, so a row is correct
+  // even if its BetPlaced event was missed or arrived after settlement. Since #24 this
+  // also supplies the fairness inputs (clientSeed/commit/reveal), which means the
+  // verify link works for a bet whose events this session never saw.
   const hydrate = useCallback((betId: bigint) => {
     (async () => {
       try {
@@ -106,14 +126,31 @@ export function useBetHistory(address: Address | undefined) {
           functionName: "bets",
           args: [betId],
         });
-        const tier = Number(bet[1]);
-        const stake = bet[2];
+        const [, rawTier, stake, clientSeed, , , commit, reveal] = bet;
+        const tier = Number(rawTier);
         setDrafts((draft) => {
           const key = betId.toString();
           const existing = draft.get(key);
-          if (!existing || (existing.tier === tier && existing.stake === stake)) return draft;
+          if (!existing) return draft;
+          if (
+            existing.tier === tier &&
+            existing.stake === stake &&
+            existing.clientSeed === clientSeed &&
+            existing.commit === commit &&
+            existing.reveal === nonZero(reveal)
+          ) {
+            return draft;
+          }
           const next = new Map(draft);
-          next.set(key, { ...existing, tier, stake });
+          next.set(key, {
+            ...existing,
+            tier,
+            stake,
+            clientSeed,
+            commit,
+            // An unsettled (or refunded) bet consumed no reveal, so the slot is zero.
+            reveal: nonZero(reveal),
+          });
           return next;
         });
       } catch {
@@ -152,12 +189,10 @@ export function useBetHistory(address: Address | undefined) {
         setDrafts((prev) => {
           let draft = prev;
           for (const log of placed) {
-            const { betId, tier, stake } = log.args;
-            if (betId !== undefined) draft = place(draft, betId, Number(tier ?? 0), stake ?? 0n);
+            if (log.args.betId !== undefined) draft = place(draft, log.args.betId, log.args);
           }
           for (const log of settled) {
-            const { betId, win, payout } = log.args;
-            if (betId !== undefined) draft = settle(draft, betId, Boolean(win), payout ?? 0n);
+            if (log.args.betId !== undefined) draft = settle(draft, log.args.betId, log.args);
           }
           return draft;
         });
@@ -191,7 +226,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetPlaced",
     enabled: Boolean(address),
-    onLogs: watch((draft, betId, a) => place(draft, betId, Number(a.tier ?? 0), a.stake ?? 0n)),
+    onLogs: watch(place),
   });
 
   useWatchContractEvent({
@@ -199,7 +234,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetSettled",
     enabled: Boolean(address),
-    onLogs: watch((draft, betId, a) => settle(draft, betId, Boolean(a.win), a.payout ?? 0n)),
+    onLogs: watch(settle),
   });
 
   const history = useMemo(
@@ -208,4 +243,9 @@ export function useBetHistory(address: Address | undefined) {
   );
 
   return { history };
+}
+
+/** Treat the zero word as "absent" — an unconsumed reveal slot reads as 0x00…0. */
+function nonZero(value: Hex): Hex | undefined {
+  return /^0x0*$/.test(value) ? undefined : value;
 }

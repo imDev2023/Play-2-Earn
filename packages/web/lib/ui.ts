@@ -31,6 +31,38 @@ export const label: CSSProperties = {
   color: "var(--muted)",
 };
 
+/** A stacked label-over-control field. */
+export const field: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.35rem",
+};
+
+export const textInput: CSSProperties = {
+  padding: "0.55rem 0.7rem",
+  fontSize: "0.95rem",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--line)",
+  background: "var(--ink-2)",
+  color: "var(--text)",
+  width: "100%",
+};
+
+/** Secondary explanatory copy sitting under a control or value. */
+export const hint: CSSProperties = {
+  margin: 0,
+  fontSize: "0.79rem",
+  color: "var(--muted)",
+  lineHeight: 1.55,
+};
+
+/** A full hash shown for inspection — wraps rather than overflows. */
+export const hexValue: CSSProperties = {
+  fontSize: "0.8rem",
+  color: "var(--cool)",
+  wordBreak: "break-all",
+};
+
 export function primaryButton(disabled = false): CSSProperties {
   return {
     appearance: "none",

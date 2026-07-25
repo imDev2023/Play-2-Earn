@@ -31,12 +31,18 @@ import { NetworkOnboarding } from "../components/NetworkOnboarding";
 import { BuyRush } from "../components/BuyRush";
 import { Reveal, type RevealPhase } from "../components/Reveal";
 import { BetHistory } from "../components/BetHistory";
+import { FairnessPanel } from "../components/FairnessPanel";
 
 type Result = { win: boolean; payout: bigint };
 type Status = "idle" | "approving" | "placing" | "waiting" | "error";
 
+/**
+ * The player's entropy contribution: 256 bits from the browser's CSPRNG, generated
+ * locally at bet time so the house never sees it in advance. Full width, because the
+ * fairness panel tells players this is 256 bits of their own randomness (#24).
+ */
 function randomSeed(): bigint {
-  const bytes = new Uint8Array(8);
+  const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
   return bytes.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n);
 }
@@ -82,6 +88,14 @@ export function PlayPanel() {
     args: [tier],
   });
 
+  // The commitment the *next* bet locks against, so a player can record it before
+  // betting rather than take our word for it afterwards (#24).
+  const { data: standingCommit, refetch: refetchCommit } = useReadContract({
+    address: GAME_ADDRESS,
+    abi: GAME_ABI,
+    functionName: "currentCommit",
+  });
+
   // Parse the stake input to wei; null when it isn't a valid positive amount.
   let stake: bigint | null = null;
   try {
@@ -115,6 +129,8 @@ export function PlayPanel() {
           setResult({ win, payout: payout ?? 0n });
           setStatus("idle");
           void refetchBalance();
+          // Settling advanced the chain head; the panel should show the new one.
+          void refetchCommit();
         }
       }
     },
@@ -258,7 +274,7 @@ export function PlayPanel() {
               <strong style={{ color: "var(--cool)" }}>
                 {formatUnits(potentialWin, 18)} RUSH
               </strong>{" "}
-              at {multiplierLabel(TIERS[tier].odds)}
+              at {multiplierLabel(tier)}
             </span>
           )}
         </div>
@@ -289,6 +305,8 @@ export function PlayPanel() {
 
         <BuyRush lowBalance={lowBalance} />
       </section>
+
+      <FairnessPanel bet={history[0]} standingCommit={standingCommit} />
 
       <BetHistory history={history} />
     </div>

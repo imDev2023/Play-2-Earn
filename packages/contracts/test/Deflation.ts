@@ -1,6 +1,8 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { seedForOutcome as seedFor } from "@rushood/verifier";
+import type { Hex } from "@rushood/verifier";
 import { buildHashChain } from "../scripts/lib/hashchain";
 
 const COINFLIP_TIER = 0; // 1-in-2
@@ -11,19 +13,18 @@ const TREASURY_FUNDING = 1_000_000n * 10n ** 18n;
 const PLAYER_FUNDING = 100_000n * 10n ** 18n;
 const STAKE = 100n * 10n ** 18n;
 
-/** On-chain outcome twin for the coinflip tier: win when keccak256(reveal, seed) is even. */
-function isWin(reveal: string, clientSeed: bigint): boolean {
-  const outcome = BigInt(
-    ethers.keccak256(ethers.solidityPacked(["bytes32", "uint256"], [reveal, clientSeed])),
-  );
-  return outcome % 2n === 0n;
-}
-
-function seedForOutcome(reveal: string, wantWin: boolean): bigint {
-  for (let i = 0n; i < 1000n; i++) {
-    if (isWin(reveal, i) === wantWin) return i;
-  }
-  throw new Error("no seed found");
+/**
+ * Smallest clientSeed producing the desired outcome for a bet, via the public
+ * verifier — the tests and the game share one formula (#24). `betId` matters: it is
+ * mixed into the draw, so the seed that wins bet 1 is not the seed that wins bet 2.
+ */
+function seedForOutcome(
+  reveal: string,
+  wantWin: boolean,
+  betId = 1n,
+  tier = COINFLIP_TIER,
+): bigint {
+  return seedFor({ betId, tier, serverReveal: reveal as Hex }, wantWin, 100_000n);
 }
 
 function burnOf(stake: bigint, bps = DEFAULT_BURN_RATE_BPS): bigint {
@@ -144,22 +145,12 @@ describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
       await game.connect(deployer).setBurnRate(MAX_BURN_RATE_BPS);
       const tier = 5; // moonshot
       const maxBet = (await game.maxBet(tier)) as bigint;
-      // Find a winning seed for the moonshot on this reveal.
-      let seed = 0n;
       const reveal = chain[1];
-      for (let i = 0n; i < 100_000n; i++) {
-        const outcome = BigInt(
-          ethers.keccak256(ethers.solidityPacked(["bytes32", "uint256"], [reveal, i])),
-        );
-        if (outcome % 1000n === 0n) {
-          seed = i;
-          break;
-        }
-      }
+      const seed = seedForOutcome(reveal, true, 1n, tier);
       await game.connect(player).placeBet(tier, maxBet, seed);
       await expect(game.connect(relayer).settleBet(reveal))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, true, await game.payoutFor(tier, maxBet));
+        .withArgs(1n, player.address, true, await game.payoutFor(tier, maxBet), reveal, 0n);
     });
 
     it("does NOT burn on a refund (a refund is a cancelled play, not a settled one)", async () => {
@@ -181,7 +172,7 @@ describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
       // Alternate wins and losses so both settlement paths are exercised.
       for (let round = 1; round <= 10; round++) {
         const wantWin = round % 2 === 0;
-        const seed = seedForOutcome(chain[round], wantWin);
+        const seed = seedForOutcome(chain[round], wantWin, BigInt(round));
         await game.connect(player).placeBet(COINFLIP_TIER, STAKE, seed);
         await game.connect(relayer).settleBet(chain[round]);
         const now = (await rush.totalSupply()) as bigint;
@@ -211,7 +202,7 @@ describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
       // 2) Zero-rate play → flat step (burn skipped), must not increase.
       await game.connect(deployer).setBurnRate(0n);
       const beforeFlat = (await rush.totalSupply()) as bigint;
-      await game.connect(player).placeBet(COINFLIP_TIER, STAKE, seedForOutcome(chain[2], true));
+      await game.connect(player).placeBet(COINFLIP_TIER, STAKE, seedForOutcome(chain[2], true, 2n));
       await game.connect(relayer).settleBet(chain[2]);
       expect(await rush.totalSupply()).to.equal(beforeFlat); // genuinely flat
       await check();
@@ -224,7 +215,9 @@ describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
 
       // 4) Restore the rate → strict drop again.
       await game.connect(deployer).setBurnRate(DEFAULT_BURN_RATE_BPS);
-      await game.connect(player).placeBet(COINFLIP_TIER, STAKE, seedForOutcome(chain[3], false));
+      // Bet 4: the refunded bet 3 consumed an id but not a reveal, so the head is
+      // still chain[2] while the draw is keyed to betId 4.
+      await game.connect(player).placeBet(COINFLIP_TIER, STAKE, seedForOutcome(chain[3], false, 4n));
       await game.connect(relayer).settleBet(chain[3]);
       await check();
 

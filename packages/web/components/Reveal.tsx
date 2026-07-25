@@ -48,7 +48,7 @@ export function Reveal({
         style={card("var(--win)", "rgba(61, 255, 158, 0.1)")}
       >
         <span style={{ ...eyebrow, color: "var(--win)" }}>
-          {isMoonshot ? "★ Moonshot hit" : `Winner · ${multiplierLabel(TIERS[tier].odds)}`}
+          {isMoonshot ? "★ Moonshot hit" : `Winner · ${multiplierLabel(tier)}`}
         </span>
         <span className="mono" style={bigNumber("var(--win)")}>
           +{formatUnits(payout, 18)}

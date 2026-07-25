@@ -1,5 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { seedForOutcome as seedFor } from "@rushood/verifier";
+import type { Hex } from "@rushood/verifier";
 import { buildHashChain } from "../scripts/lib/hashchain";
 
 // Mirrors of the on-chain economic constants (see RushoodGame.sol).
@@ -20,20 +22,15 @@ function payoutFor(tier: number, stake: bigint): bigint {
   return (stake * EDGE_NUM * TIER_ODDS[tier]) / EDGE_DEN;
 }
 
-/** On-chain outcome twin: win when keccak256(reveal, clientSeed) % N == 0. */
-function isWin(reveal: string, clientSeed: bigint, tier: number): boolean {
-  const outcome = BigInt(
-    ethers.keccak256(ethers.solidityPacked(["bytes32", "uint256"], [reveal, clientSeed])),
-  );
-  return outcome % TIER_ODDS[tier] === 0n;
-}
+/** withArgs predicate: any losing roll (a win is exactly 0, a loss is anything else). */
+const anyNonZeroRoll = (roll: bigint) => roll !== 0n;
 
-/** Smallest clientSeed producing the desired win/loss for a reveal on a tier. */
-function seedForOutcome(reveal: string, tier: number, wantWin: boolean): bigint {
-  for (let i = 0n; i < 100_000n; i++) {
-    if (isWin(reveal, i, tier) === wantWin) return i;
-  }
-  throw new Error(`no seed found for tier ${tier} want=${wantWin}`);
+/**
+ * Smallest clientSeed producing the desired win/loss for a reveal on a tier.
+ * Delegates to the public verifier so the tests and the game share one formula (#24).
+ */
+function seedForOutcome(reveal: string, tier: number, wantWin: boolean, betId = 1n): bigint {
+  return seedFor({ betId, tier, serverReveal: reveal as Hex }, wantWin, 100_000n);
 }
 
 describe("Odds tiers + payout math + solvency caps (#20)", () => {
@@ -160,11 +157,11 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
 
   describe("bet lifecycle across tiers", () => {
     it("records the chosen tier and stake on placeBet", async () => {
-      const { game, player } = await deploy();
+      const { game, player, chain } = await deploy();
       const stake = 100n * 10n ** 18n; // within maxBet(3) at 1M funding
       await expect(game.connect(player).placeBet(3, stake, 42n))
         .to.emit(game, "BetPlaced")
-        .withArgs(1n, player.address, 3, stake, 42n);
+        .withArgs(1n, player.address, 3, stake, 42n, chain[0]);
       const bet = await game.bets(1n);
       expect(bet.tier).to.equal(3);
       expect(bet.stake).to.equal(stake);
@@ -181,7 +178,9 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       const treasuryBefore = await rush.balanceOf(await treasury.getAddress());
       await expect(game.connect(relayer).settleBet(chain[1]))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, true, payout);
+        // A win is a roll of 0 on every tier; the reveal rides along so the draw is
+        // publicly recomputable (#24).
+        .withArgs(1n, player.address, true, payout, chain[1], 0n);
       // Settle pays the win and burns 2.5% of the stake (#21 deflation).
       const burn = (stake * 250n) / 10_000n;
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(
@@ -198,7 +197,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       const treasuryBefore = await rush.balanceOf(await treasury.getAddress());
       await expect(game.connect(relayer).settleBet(chain[1]))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, false, 0n);
+        .withArgs(1n, player.address, false, 0n, chain[1], anyNonZeroRoll);
       // The stake stays, less the 2.5% burn (#21 deflation).
       const burn = (stake * 250n) / 10_000n;
       expect(await rush.balanceOf(await treasury.getAddress())).to.equal(treasuryBefore - burn);
@@ -238,7 +237,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       // Settlement must NOT revert for want of funds.
       await expect(game.connect(relayer).settleBet(chain[1]))
         .to.emit(game, "BetSettled")
-        .withArgs(1n, player.address, true, payoutFor(tier, maxBet));
+        .withArgs(1n, player.address, true, payoutFor(tier, maxBet), chain[1], 0n);
     });
 
     it("shrinks the safe cap as the pool depletes (each win keeps within maxPayout)", async () => {
@@ -250,7 +249,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       for (let round = 1; round <= 4; round++) {
         const stake = await game.maxBet(0);
         expect(await game.payoutFor(0, stake)).to.be.lte(await game.maxPayout());
-        const seed = seedForOutcome(chain[round], 0, true);
+        const seed = seedForOutcome(chain[round], 0, true, BigInt(round));
         await game.connect(player).placeBet(0, stake, seed);
         await game.connect(relayer).settleBet(chain[round]);
         const cap = await game.maxBet(0);
