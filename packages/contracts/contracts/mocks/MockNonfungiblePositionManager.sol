@@ -34,6 +34,15 @@ contract MockNonfungiblePositionManager is INonfungiblePositionManager {
     mapping(uint256 tokenId => address holder) private _owners;
     uint256 private _nextTokenId = 1;
 
+    /// @notice Mirrors Uniswap's event, so the seeding script can recover the new
+    ///         position's id from the receipt exactly as it will in production.
+    event IncreaseLiquidity(
+        uint256 indexed tokenId,
+        uint128 liquidity,
+        uint256 amount0,
+        uint256 amount1
+    );
+
     /// @notice Thrown when a transfer names a sender that does not hold the position.
     error NotPositionOwner();
     /// @notice Thrown when a contract recipient rejects the position NFT.
@@ -44,10 +53,75 @@ contract MockNonfungiblePositionManager is INonfungiblePositionManager {
         token1 = token1_;
     }
 
+    /// @notice Parameters Uniswap's `mint` takes, mirrored so the seeding script can be
+    ///         exercised against this mock with the exact call it makes in production.
+    struct MintParams {
+        address token0;
+        address token1;
+        uint24 fee;
+        int24 tickLower;
+        int24 tickUpper;
+        uint256 amount0Desired;
+        uint256 amount1Desired;
+        uint256 amount0Min;
+        uint256 amount1Min;
+        address recipient;
+        uint256 deadline;
+    }
+
+    /// @notice The price the pool was initialized at, so tests can assert the seeding
+    ///         script encoded the intended price rather than its inverse.
+    uint160 public lastSqrtPriceX96;
+    /// @notice The most recent mint's parameters, for the same reason.
+    MintParams public lastMintParams;
+
     /// @notice Mint a position NFT to `to`, standing in for a seeded liquidity position.
     function mintPosition(address to) external returns (uint256 tokenId) {
         tokenId = _nextTokenId++;
         _owners[tokenId] = to;
+    }
+
+    /// @notice Records the initial price; the real contract deploys and initializes a pool.
+    function createAndInitializePoolIfNecessary(
+        address,
+        address,
+        uint24,
+        uint160 sqrtPriceX96
+    ) external returns (address pool) {
+        lastSqrtPriceX96 = sqrtPriceX96;
+        return address(this);
+    }
+
+    /// @notice Pulls both tokens from the caller and mints a position NFT to `recipient`.
+    /// @dev Deposits the full desired amounts rather than solving the real liquidity
+    ///      maths — enough to verify the script approves, orders and transfers
+    ///      correctly, and that the resulting position reaches the lock.
+    function mint(
+        MintParams calldata params
+    ) external payable returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1) {
+        amount0 = params.amount0Desired;
+        amount1 = params.amount1Desired;
+
+        IERC20(params.token0).safeTransferFrom(msg.sender, address(this), amount0);
+        IERC20(params.token1).safeTransferFrom(msg.sender, address(this), amount1);
+
+        lastMintParams = params;
+        tokenId = _nextTokenId++;
+        _owners[tokenId] = params.recipient;
+        liquidity = uint128(sqrtBigIntLike(amount0 * amount1));
+
+        emit IncreaseLiquidity(tokenId, liquidity, amount0, amount1);
+    }
+
+    /// @dev Crude integer sqrt, only so `liquidity` is a plausible non-zero number.
+    function sqrtBigIntLike(uint256 value) private pure returns (uint256 result) {
+        if (value == 0) return 0;
+        result = value;
+        uint256 k = value / 2 + 1;
+        while (k < result) {
+            result = k;
+            k = (value / k + k) / 2;
+        }
     }
 
     /// @notice Credit a position with uncollected trading fees.

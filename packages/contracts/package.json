@@ -10,6 +10,8 @@
     "lint": "solhint 'contracts/**/*.sol'",
     "node": "hardhat node",
     "deploy:skeleton": "hardhat run scripts/deploy-skeleton.ts --network localhost",
+    "deploy:launch": "hardhat run scripts/deploy-launch.ts --network localhost",
+    "checklist": "hardhat run scripts/launch-checklist.ts --network localhost",
     "relayer": "hardhat run scripts/relayer.ts --network localhost"
   },
   "devDependencies": {

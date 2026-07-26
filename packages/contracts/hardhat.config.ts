@@ -6,6 +6,25 @@ import "@nomicfoundation/hardhat-toolbox";
  * Networks are wired here but left keyless in the scaffold; later tickets add
  * deploy config + secrets. Chain IDs: mainnet 4663, testnet 46630.
  */
+
+/**
+ * Accounts for a public network.
+ *
+ * The launch checklist (#26) needs *distinct* addresses for deployer, relayer, player
+ * and guardian — running them all from one key would let access-control checks pass
+ * for the wrong reason. `TESTNET_PRIVATE_KEYS` takes a comma-separated list; a single
+ * `DEPLOYER_PRIVATE_KEY` still works for deploy-only runs.
+ */
+function accountsFromEnv(): string[] {
+  const list = process.env.TESTNET_PRIVATE_KEYS;
+  if (list) {
+    return list
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+  }
+  return process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [];
+}
 const config: HardhatUserConfig = {
   solidity: {
     version: "0.8.24",
@@ -17,12 +36,12 @@ const config: HardhatUserConfig = {
     robinhoodTestnet: {
       url: process.env.ROBINHOOD_TESTNET_RPC_URL ?? "",
       chainId: 46630,
-      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      accounts: accountsFromEnv(),
     },
     robinhoodMainnet: {
       url: process.env.ROBINHOOD_MAINNET_RPC_URL ?? "",
       chainId: 4663,
-      accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      accounts: accountsFromEnv(),
     },
   },
 };
