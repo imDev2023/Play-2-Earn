@@ -12,6 +12,9 @@ export const MAX_SUPPLY = 1_000_000_000n * 10n ** 18n;
 
 const BPS_DENOMINATOR = 10_000n;
 
+/** Declared locally so this module stays free of an ethers import and remains pure. */
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
 /** The five genesis buckets, keyed by the role that ends up holding them. */
 export type GenesisBucket = "treasury" | "liquidity" | "community" | "team" | "staking";
 
@@ -116,5 +119,3 @@ export async function distributeGenesis(
   }
   return sent;
 }
-
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";

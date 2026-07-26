@@ -39,14 +39,10 @@ interface CheckResult {
 
 const results: CheckResult[] = [];
 
-function record(name: string, passed: boolean, detail: string): void {
+/** Records rather than throwing, so one failed item doesn't hide the rest. */
+function check(name: string, passed: boolean, detail: string): void {
   results.push({ name, passed, detail });
   console.log(`  ${passed ? "PASS" : "FAIL"}  ${name} — ${detail}`);
-}
-
-/** Assert-style helper that records rather than throwing, so one failure doesn't hide the rest. */
-function check(name: string, condition: boolean, detail: string): void {
-  record(name, condition, detail);
 }
 
 /**

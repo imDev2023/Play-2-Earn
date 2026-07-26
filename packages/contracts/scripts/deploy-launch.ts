@@ -44,7 +44,6 @@ const DEFAULT_LP_ETH_MAINNET = 25n * 10n ** 18n;
 const DEFAULT_LP_ETH_TESTNET = 5n * 10n ** 16n; // 0.05 ETH
 
 const TIMELOCK_MIN_DELAY = BigInt(process.env.TIMELOCK_MIN_DELAY ?? 2 * 24 * 60 * 60);
-const MASTER_SEED = process.env.RELAYER_SEED ?? DEFAULT_MASTER_SEED;
 const CHAIN_LENGTH = Number(process.env.RELAYER_CHAIN_LENGTH ?? DEFAULT_CHAIN_LENGTH);
 const LP_FEE_TIER = Number(process.env.LP_FEE_TIER ?? DEFAULT_FEE_TIER);
 
@@ -56,11 +55,37 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * The relayer's master seed — the crown-jewel secret.
+ *
+ * On a public network this MUST come from the environment. `DEFAULT_MASTER_SEED` is
+ * the committed dev seed ("rushood-dev-seed"), and the whole reveal chain is derived
+ * from it deterministically. Falling back to it on a real chain would publish a genesis
+ * commitment anyone could reproduce, making every future roll predictable in advance —
+ * the exact failure the commit-reveal scheme exists to prevent. Spec §8: "treat s₀ as
+ * the crown-jewel secret".
+ *
+ * deploy-skeleton.ts may fall back, because it only ever targets a local node.
+ */
+function resolveMasterSeed(isLocal: boolean): string {
+  if (isLocal) return process.env.RELAYER_SEED ?? DEFAULT_MASTER_SEED;
+
+  const seed = requireEnv("RELAYER_SEED");
+  if (seed === DEFAULT_MASTER_SEED) {
+    throw new Error(
+      "RELAYER_SEED is set to the public dev seed. Every roll derived from it is " +
+        "predictable — generate a secret seed for this deployment.",
+    );
+  }
+  return seed;
+}
+
 async function main() {
   const signers = await ethers.getSigners();
   const [deployer, relayerSigner] = signers;
   const chainId = (await ethers.provider.getNetwork()).chainId;
   const isLocal = network.name === "localhost" || network.name === "hardhat";
+  const masterSeed = resolveMasterSeed(isLocal);
 
   // On a real network every role must be named explicitly. Locally we fall back to
   // dev signers so the dry run is a single command.
@@ -105,7 +130,7 @@ async function main() {
   await timelock.waitForDeployment();
 
   // --- 3. Treasury + game + randomness ------------------------------------
-  const genesisCommit = epochChain(MASTER_SEED, 0, CHAIN_LENGTH)[0];
+  const genesisCommit = epochChain(masterSeed, 0, CHAIN_LENGTH)[0];
   const treasury = await (await ethers.getContractFactory("Treasury")).deploy(
     await rush.getAddress(),
   );
@@ -129,9 +154,13 @@ async function main() {
 
   const { positionManagerAddress, wethAddress, usingMocks } = await resolveUniswap(isLocal, rush);
 
+  // Fees go to the Safe, NOT the Treasury. Treasury only ever moves its immutable RUSH
+  // token and has no rescue path, so the WETH side of the LP fees would be stuck there
+  // forever. Routing LP fee income into the house bankroll would also be an economics
+  // change the spec doesn't describe — the Safe can hold both sides and decide.
   const lpLock = await (
     await ethers.getContractFactory("RushoodLPLock")
-  ).deploy(positionManagerAddress, await treasury.getAddress(), await timelock.getAddress());
+  ).deploy(positionManagerAddress, safe, await timelock.getAddress());
   await lpLock.waitForDeployment();
 
   // --- 5. Genesis allocation ----------------------------------------------
@@ -192,6 +221,14 @@ async function main() {
   });
 
   const unseeded = liquidityBudget - lpRushAmount;
+  if (unseeded > 0n && !isLocal && process.env.ALLOW_PARTIAL_LP_SEED !== "true") {
+    throw new Error(
+      `Only ${lpRushAmount} of the ${liquidityBudget} RUSH liquidity allocation would be ` +
+        `seeded, leaving ${unseeded} RUSH outside the LP lock. The spec locks the full 25% ` +
+        `(§3). Raise LP_ETH_AMOUNT to seed it all, or set ALLOW_PARTIAL_LP_SEED=true to ` +
+        `accept the overhang deliberately.`,
+    );
+  }
   if (unseeded > 0n) {
     await (await rush.transfer(safe, unseeded)).wait();
     console.log(
@@ -208,6 +245,8 @@ async function main() {
   const deployment = {
     network: network.name,
     chainId: Number(chainId),
+    // Recorded because verification must replay the exact constructor arguments.
+    deployer: deployer.address,
     rush: await rush.getAddress(),
     treasury: await treasury.getAddress(),
     game: await game.getAddress(),
@@ -224,6 +263,7 @@ async function main() {
     vestingStart: Number(vestingStart),
     lpPositionId: Number(tokenId),
     lpUnlockTime: Number(await lpLock.unlockTime()),
+    lpFeeRecipient: safe,
     lpPool: {
       positionManager: positionManagerAddress,
       weth: wethAddress,

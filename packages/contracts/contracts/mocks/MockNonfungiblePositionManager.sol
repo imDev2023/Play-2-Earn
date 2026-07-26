@@ -108,13 +108,14 @@ contract MockNonfungiblePositionManager is INonfungiblePositionManager {
         lastMintParams = params;
         tokenId = _nextTokenId++;
         _owners[tokenId] = params.recipient;
-        liquidity = uint128(sqrtBigIntLike(amount0 * amount1));
+        liquidity = uint128(approximateSqrt(amount0 * amount1));
 
         emit IncreaseLiquidity(tokenId, liquidity, amount0, amount1);
     }
 
-    /// @dev Crude integer sqrt, only so `liquidity` is a plausible non-zero number.
-    function sqrtBigIntLike(uint256 value) private pure returns (uint256 result) {
+    /// @dev Crude integer sqrt, only so `liquidity` reads as a plausible non-zero number.
+    ///      The mock does not model real liquidity maths.
+    function approximateSqrt(uint256 value) private pure returns (uint256 result) {
         if (value == 0) return 0;
         result = value;
         uint256 k = value / 2 + 1;
