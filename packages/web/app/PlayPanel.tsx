@@ -25,6 +25,7 @@ import {
   TIERS,
 } from "../lib/contracts";
 import { useBetHistory } from "../lib/useBetHistory";
+import { readableError } from "../lib/errors";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
 import { NetworkOnboarding } from "../components/NetworkOnboarding";
@@ -317,12 +318,6 @@ function statusLabel(status: Status): string {
   if (status === "approving") return "Approving RUSH…";
   if (status === "placing") return "Placing bet…";
   return "Drawing…";
-}
-
-/** Trim noisy provider errors down to their first line for display. */
-function readableError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.split("\n")[0];
 }
 
 const topBar: CSSProperties = {

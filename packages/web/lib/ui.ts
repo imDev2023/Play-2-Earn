@@ -31,6 +31,40 @@ export const label: CSSProperties = {
   color: "var(--muted)",
 };
 
+/**
+ * A small uppercase status pill — paused/live, a relayer's state, a queued operation's
+ * state. Callers supply the tone: `{ ...statusBadge, color: X, borderColor: X }`.
+ */
+export const statusBadge: CSSProperties = {
+  display: "inline-flex",
+  padding: "0.25rem 0.6rem",
+  borderRadius: "999px",
+  border: "1px solid var(--line)",
+  fontSize: "0.72rem",
+  fontWeight: 700,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+  color: "var(--muted)",
+};
+
+/**
+ * A bordered action button that takes its colour from the action: the destructive ones
+ * (pause, cancel) read as hot, the constructive ones (resume, execute) as cool.
+ */
+export function tonedButton(tone: string, disabled = false): CSSProperties {
+  return {
+    appearance: "none",
+    padding: "0.55rem 0.9rem",
+    fontSize: "0.9rem",
+    fontWeight: 600,
+    borderRadius: "var(--radius-sm)",
+    border: `1px solid ${disabled ? "var(--line)" : tone}`,
+    background: "transparent",
+    color: disabled ? "var(--muted)" : tone,
+    cursor: disabled ? "not-allowed" : "pointer",
+  };
+}
+
 /** A stacked label-over-control field. */
 export const field: CSSProperties = {
   display: "flex",
