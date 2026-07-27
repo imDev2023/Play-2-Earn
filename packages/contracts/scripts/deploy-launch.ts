@@ -87,14 +87,15 @@ async function main() {
   const isLocal = network.name === "localhost" || network.name === "hardhat";
   const masterSeed = resolveMasterSeed(isLocal);
 
-  // On a real network every role must be named explicitly. Locally we fall back to
-  // dev signers so the dry run is a single command.
-  const safe = isLocal
-    ? (signers[3] ?? deployer).address
-    : (process.env.GOVERNANCE_SAFE ?? requireEnv("GOVERNANCE_SAFE"));
-  const teamBeneficiary = isLocal
-    ? (signers[4] ?? deployer).address
-    : (process.env.TEAM_BENEFICIARY ?? requireEnv("TEAM_BENEFICIARY"));
+  // On a real network every role must be named explicitly. Locally we fall back to dev
+  // signers so the dry run is a single command — but an explicit env var still wins, so
+  // a local stack can be wired to whichever account the browser wallet will connect as.
+  const safe =
+    process.env.GOVERNANCE_SAFE ??
+    (isLocal ? (signers[3] ?? deployer).address : requireEnv("GOVERNANCE_SAFE"));
+  const teamBeneficiary =
+    process.env.TEAM_BENEFICIARY ??
+    (isLocal ? (signers[4] ?? deployer).address : requireEnv("TEAM_BENEFICIARY"));
   const relayerAddress = process.env.RELAYER_ADDRESS ?? (relayerSigner ?? deployer).address;
 
   const lpEthAmount = BigInt(
