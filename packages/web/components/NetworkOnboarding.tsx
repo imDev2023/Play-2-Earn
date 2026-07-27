@@ -2,7 +2,14 @@
 
 import type { CSSProperties } from "react";
 import { useChainId, useSwitchChain } from "wagmi";
-import { ACTIVE_CHAIN_ID, activeChain, chainLabel, gasHelpUrl, isLocalChain } from "../lib/chain";
+import {
+  ACTIVE_CHAIN_ID,
+  activeChain,
+  activeChainConfigError,
+  chainLabel,
+  gasHelpUrl,
+  isLocalChain,
+} from "../lib/chain";
 import { wagmiConfig } from "../lib/wagmi";
 import { ghostButton, linkButton } from "../lib/ui";
 
@@ -41,22 +48,32 @@ export function NetworkOnboarding() {
     );
   }
 
+  const configError = activeChainConfigError();
+  if (configError) {
+    return (
+      <div data-testid="chain-misconfigured" role="alert" style={banner}>
+        <div>
+          <strong style={{ display: "block" }}>Network not configured</strong>
+          <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>{configError}</span>
+        </div>
+      </div>
+    );
+  }
+
   if (isLocalChain) return null;
+
+  const gasUrl = gasHelpUrl();
 
   return (
     <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
       <span data-testid="network-ok" style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
-        On {activeChain.name}. Need gas to play?
+        On {activeChain.name}.{gasUrl ? " Need gas to play?" : ""}
       </span>
-      <a
-        data-testid="get-gas"
-        href={gasHelpUrl()}
-        target="_blank"
-        rel="noreferrer"
-        style={linkButton}
-      >
-        Get ETH for gas →
-      </a>
+      {gasUrl ? (
+        <a data-testid="get-gas" href={gasUrl} target="_blank" rel="noreferrer" style={linkButton}>
+          Get ETH for gas →
+        </a>
+      ) : null}
     </div>
   );
 }
