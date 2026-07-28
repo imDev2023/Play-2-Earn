@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Interface } from "ethers";
 import { ethers, network } from "hardhat";
 import { verifyRoll } from "@rushood/verifier";
+import { revertsWith as matchesExpectedRevert } from "./lib/revert-matching";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead } from "./lib/relayer-core";
 import { MAX_SUPPLY, allocations } from "./lib/genesis";
@@ -52,17 +54,17 @@ function check(name: string, passed: boolean, detail: string): void {
  * address or a bad argument reverts too, and a checklist that goes green on a broken
  * deployment is worse than no checklist. Matching the specific error name means the
  * item only passes when the contract refused for the reason being tested.
+ *
+ * The contract is passed in for its interface: a public RPC node returns the revert as
+ * raw ABI-encoded bytes rather than the decoded object Hardhat's in-process node
+ * provides, and decoding those bytes needs the ABI. See lib/revert-matching.ts.
  */
-async function revertsWith(call: () => Promise<unknown>, expected: string): Promise<boolean> {
-  try {
-    await call();
-    return false;
-  } catch (error) {
-    const name = (error as { revert?: { name?: string } }).revert?.name;
-    if (name) return name === expected;
-    // Not a decodable custom error (an RPC-level revert, say) — fall back to the text.
-    return String((error as Error).message ?? "").includes(expected);
-  }
+function revertsWith(
+  call: () => Promise<unknown>,
+  expected: string,
+  contract: { readonly interface: Interface },
+): Promise<boolean> {
+  return matchesExpectedRevert(call, expected, contract.interface);
 }
 
 async function main() {
@@ -152,6 +154,7 @@ async function main() {
     await revertsWith(
       () => lpLock.connect(player).withdraw.staticCall(deployment.lpPositionId, player.address),
       "OwnableUnauthorizedAccount",
+      lpLock,
     ),
     "OwnableUnauthorizedAccount",
   );
@@ -166,6 +169,14 @@ async function main() {
   // --- Play across every tier ---------------------------------------------
   console.log("\nPlay across all tiers");
   const chain = epochChain(MASTER_SEED, 0, CHAIN_LENGTH);
+
+  // The game allows one bet at a time, so a bet left in flight by an interrupted run
+  // makes every placeBet below revert with BetAlreadyActive — and the checklist would
+  // fail on a deployment that is actually fine. A testnet run takes over an hour
+  // (SETTLE_TIMEOUT is waited out for real), so interruptions are the normal case, and
+  // the alternative recovery is redeploying the whole launch stack.
+  await settleAnyBetLeftInFlight(game, chain, relayer);
+
   let lastSettled: { betId: bigint; tier: number; clientSeed: bigint; reveal: string } | null = null;
 
   for (let tier = 0; tier < TIER_COUNT; tier++) {
@@ -242,6 +253,7 @@ async function main() {
     await revertsWith(
       () => game.connect(player).placeBet.staticCall(0, minBet - 1n, 1n),
       "BetBelowMin",
+      game,
     ),
     `BetBelowMin — minBet ${ethers.formatUnits(minBet, 18)} RUSH`,
   );
@@ -252,6 +264,7 @@ async function main() {
     await revertsWith(
       () => game.connect(player).placeBet.staticCall(5, maxBetMoonshot + 10n ** 18n, 1n),
       "ExceedsMaxBet",
+      game,
     ),
     `ExceedsMaxBet — maxBet(1-in-1000) ${ethers.formatUnits(maxBetMoonshot, 18)} RUSH`,
   );
@@ -265,6 +278,7 @@ async function main() {
       await revertsWith(
         () => game.connect(player).placeBet.staticCall(0, STAKE, 1n),
         "EnforcedPause",
+        game,
       ),
       "EnforcedPause — placeBet refused while paused",
     );
@@ -319,6 +333,31 @@ async function main() {
         "      exercise the lock, not a real pool.",
     );
   }
+}
+
+/**
+ * Settle a bet left active by a previous, interrupted run.
+ *
+ * Settling rather than refunding: a refund would mean waiting out SETTLE_TIMEOUT again
+ * before the checklist could even start. The outcome of this bet is irrelevant — it is
+ * not one of the checked items, it exists only to return the game to an idle state.
+ */
+async function settleAnyBetLeftInFlight(
+  game: {
+    activeBetId(): Promise<bigint>;
+    currentCommit(): Promise<string>;
+    connect(signer: unknown): { settleBet(reveal: string): Promise<{ wait(): Promise<unknown> }> };
+  },
+  chain: string[],
+  relayer: unknown,
+): Promise<void> {
+  const active = await game.activeBetId();
+  if (active === 0n) return;
+
+  const head = await game.currentCommit();
+  const round = roundForHead(chain, head);
+  console.log(`  clearing bet #${active} left active by an earlier run`);
+  await (await game.connect(relayer).settleBet(chain[round])).wait();
 }
 
 function waitSeconds(seconds: number): Promise<void> {
