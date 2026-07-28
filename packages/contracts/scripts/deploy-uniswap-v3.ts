@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ethers, network } from "hardhat";
 import {
+  EXPECTED_FEE_TIERS,
+  type UniswapV3Stack,
   assertSelfDeployIsWarranted,
   deployUniswapV3Stack,
-  expectedFeeTiers,
 } from "./lib/uniswap-v3-stack";
 
 /**
@@ -37,7 +38,7 @@ async function main() {
   const existing = await loadIfStillDeployed(path);
   if (existing) {
     console.log(`Uniswap v3 already stood up on ${network.name} — reusing.`);
-    report(existing);
+    printLaunchEnv(existing);
     return;
   }
 
@@ -80,7 +81,7 @@ async function main() {
   writeFileSync(path, JSON.stringify(record, null, 2) + "\n");
   console.log(`\nWritten to deployments/uniswap-${network.name}.json`);
 
-  report(record);
+  printLaunchEnv(record);
 }
 
 /**
@@ -91,17 +92,13 @@ async function main() {
  * the failure lands in this script rather than halfway through the launch sequence, with
  * the genesis allocation already distributed.
  */
-async function assertStackIsLive(stack: {
-  factory: string;
-  positionManager: string;
-  weth9: string;
-}): Promise<void> {
+async function assertStackIsLive(stack: UniswapV3Stack): Promise<void> {
   const factory = new ethers.Contract(
     stack.factory,
     ["function feeAmountTickSpacing(uint24) view returns (int24)"],
     ethers.provider,
   );
-  for (const tier of expectedFeeTiers()) {
+  for (const tier of EXPECTED_FEE_TIERS) {
     const spacing = await factory.feeAmountTickSpacing(tier);
     if (spacing === 0n) throw new Error(`Factory did not enable the ${tier} fee tier`);
   }
@@ -135,7 +132,7 @@ async function loadIfStillDeployed(
   return record;
 }
 
-function report(record: { positionManager: string; weth9: string }): void {
+function printLaunchEnv(record: { positionManager: string; weth9: string }): void {
   console.log("\nSet these for the launch deploy:");
   console.log(`  UNISWAP_POSITION_MANAGER=${record.positionManager}`);
   console.log(`  WETH_ADDRESS=${record.weth9}`);

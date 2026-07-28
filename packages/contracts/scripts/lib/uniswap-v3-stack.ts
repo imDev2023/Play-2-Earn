@@ -38,7 +38,7 @@ export const CANONICAL_V3_POSITION_MANAGERS: Readonly<Record<number, string>> = 
 };
 
 /** The three fee tiers a stock UniswapV3Factory enables in its constructor. */
-const EXPECTED_FEE_TIERS = [500, 3000, 10000] as const;
+export const EXPECTED_FEE_TIERS = [500, 3000, 10000] as const;
 
 /**
  * Refuse to self-deploy where a canonical Uniswap already exists.
@@ -121,11 +121,6 @@ export async function deployUniswapV3Stack(
     positionManager,
     weth9: options.weth9,
   };
-}
-
-/** The fee tiers a stock factory enables — exported so a deploy can assert them on-chain. */
-export function expectedFeeTiers(): readonly number[] {
-  return EXPECTED_FEE_TIERS;
 }
 
 async function deployFrom(

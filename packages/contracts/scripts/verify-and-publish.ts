@@ -1,8 +1,8 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { artifacts, ethers, network } from "hardhat";
 import { CANONICAL_V3_POSITION_MANAGERS } from "./lib/uniswap-v3-stack";
-import { verifyContract } from "./lib/blockscout-verify";
+import { type VerificationRequest, verifyContract } from "./lib/blockscout-verify";
 
 /**
  * Verify every deployed contract on Blockscout and publish the address list
@@ -46,7 +46,13 @@ interface Deployment {
   readonly vestingStart: number;
   readonly lpUnlockTime: number;
   readonly lpFeeRecipient: string;
-  readonly lpPool?: { readonly positionManager: string; readonly usingMocks: boolean };
+  readonly lpPool?: {
+    readonly positionManager: string;
+    readonly usingMocks: boolean;
+    /** RUSH actually seeded into the pool, and the remainder left outside the lock. */
+    readonly rushSeeded?: string;
+    readonly unseededRush?: string;
+  };
 }
 
 async function main() {
@@ -151,7 +157,7 @@ async function main() {
  * hand — or reusing whichever build-info happens to be first on disk — risks recompiling
  * under different settings and producing bytecode that no longer matches the chain.
  */
-async function buildSource(target: VerifyTarget) {
+async function buildSource(target: VerifyTarget): Promise<VerificationRequest> {
   const artifact = await artifacts.readArtifact(target.name);
   const artifactDir = join(__dirname, "..", "artifacts", artifact.sourceName);
   const dbgPath = join(artifactDir, `${artifact.contractName}.dbg.json`);
@@ -171,6 +177,66 @@ async function buildSource(target: VerifyTarget) {
     ),
     optimizer: { enabled: Boolean(optimizer.enabled), runs: Number(optimizer.runs ?? 200) },
   };
+}
+
+/**
+ * Report the launch-checklist result, or say plainly that it has not been run.
+ *
+ * Absence is reported rather than omitted: a page that simply leaves the section out
+ * reads as "fine" to someone skimming, when the honest statement is "unknown".
+ */
+function checklistLine(): string {
+  const path = join(__dirname, "..", "deployments", `checklist-${network.name}.json`);
+  if (!existsSync(path)) {
+    return "**Not run against this deployment.** Run `scripts/launch-checklist.ts` — until it\npasses, nothing here has been exercised end to end.";
+  }
+
+  const run = JSON.parse(readFileSync(path, "utf8"));
+  const when = String(run.ranAt ?? "").slice(0, 10);
+  if (run.passed === run.total) {
+    return `**${run.passed}/${run.total} checks passed** (${when}) — play across all six tiers, the
+public fairness verifier, bet caps, guardian pause/unpause, and the relayer-down refund
+after a real \`SETTLE_TIMEOUT\` wait.`;
+  }
+  return `**${run.passed}/${run.total} checks passed** (${when}). FAILED: ${(run.failures ?? []).join(", ")}`;
+}
+
+/**
+ * Describe what the lock actually holds — including what it does not.
+ *
+ * The genesis split allocates 25% to liquidity, and on a full launch all of it is seeded
+ * and locked. A scaled-down run seeds only part of it (`LP_ETH_AMOUNT` sets the ETH side
+ * and the RUSH side follows at the pinned price), and `deploy-launch.ts` hands the
+ * remainder to the Safe, *outside* the lock. Stating "liquidity is held by RushoodLPLock"
+ * without that qualifier would describe a 2-year lock over a fraction of the tokens a
+ * reader would reasonably assume it covers — on this testnet run, 0.2% of the bucket.
+ *
+ * The unlocked remainder is the single most consequential number on this page for anyone
+ * judging supply overhang, so it is stated in the same breath as the lock rather than
+ * left to be reconstructed from the deployment JSON, which is not even committed.
+ */
+function liquidityCommitment(deployment: Deployment, unlock: string): string {
+  const locked =
+    " is held by `RushoodLPLock` — the position cannot be withdrawn before\n" +
+    `  **${unlock}**. The contract exposes no approve, no liquidity decrease and no call\n` +
+    "  forwarder, so the position cannot leave by any other route. Call `isLocked()` to confirm.";
+
+  const unseeded = BigInt(deployment.lpPool?.unseededRush ?? "0");
+  if (unseeded === 0n) return locked;
+
+  const seeded = BigInt(deployment.lpPool?.rushSeeded ?? "0");
+  return (
+    `${locked}\n` +
+    `  **Only ${formatRush(seeded)} RUSH of the 250,000,000 liquidity allocation is in that\n` +
+    `  position.** The remaining ${formatRush(unseeded)} RUSH was sent to the Safe\n` +
+    `  (\`${deployment.governanceSafe}\`) and is **not** locked — treat it as\n` +
+    "  circulating overhang, not as committed liquidity."
+  );
+}
+
+/** Whole-token RUSH with thousands separators; the wei tail is noise at these sizes. */
+function formatRush(wei: bigint): string {
+  return (wei / 10n ** 18n).toLocaleString("en-US");
 }
 
 /**
@@ -247,9 +313,7 @@ ${rows}
 
 - **Team allocation** is held by \`RushoodVesting\` — nothing releasable until **${cliff}**
   (6-month cliff), then linear to fully vested at month 24.
-- **Liquidity** is held by \`RushoodLPLock\` — the position cannot be withdrawn before
-  **${unlock}**. The contract exposes no approve, no liquidity decrease and no call
-  forwarder, so the position cannot leave by any other route. Call \`isLocked()\` to confirm.
+- **Liquidity**${liquidityCommitment(deployment, unlock)}
 - **Governance** of the game's parameters is the Timelock at
   \`${deployment.timelock}\`, proposed and executed by the Safe.
 
@@ -257,6 +321,10 @@ ${rows}
 
 Every settled roll is independently recomputable from its event data using the
 open-source verifier in \`packages/verifier\`. The in-app panel is at \`/verify\`.
+
+## Launch checklist
+
+${checklistLine()}
 
 ## Status
 

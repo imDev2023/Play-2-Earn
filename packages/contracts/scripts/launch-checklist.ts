@@ -1,9 +1,11 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Interface } from "ethers";
 import { ethers, network } from "hardhat";
 import { verifyRoll } from "@rushood/verifier";
-import { revertsWith as matchesExpectedRevert } from "./lib/revert-matching";
+// Reports *which* custom error came back, not merely that something reverted — a
+// checklist accepting any revert would pass on a mistyped address. Takes the contract's
+// Interface because a public RPC node returns the revert as raw ABI-encoded bytes.
+import { revertsWith } from "./lib/revert-matching";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead } from "./lib/relayer-core";
 import { MAX_SUPPLY, allocations } from "./lib/genesis";
@@ -45,26 +47,6 @@ const results: CheckResult[] = [];
 function check(name: string, passed: boolean, detail: string): void {
   results.push({ name, passed, detail });
   console.log(`  ${passed ? "PASS" : "FAIL"}  ${name} — ${detail}`);
-}
-
-/**
- * Run a call expected to revert, and report *which* custom error came back.
- *
- * Catching any error would let these checks pass for the wrong reason — a mistyped
- * address or a bad argument reverts too, and a checklist that goes green on a broken
- * deployment is worse than no checklist. Matching the specific error name means the
- * item only passes when the contract refused for the reason being tested.
- *
- * The contract is passed in for its interface: a public RPC node returns the revert as
- * raw ABI-encoded bytes rather than the decoded object Hardhat's in-process node
- * provides, and decoding those bytes needs the ABI. See lib/revert-matching.ts.
- */
-function revertsWith(
-  call: () => Promise<unknown>,
-  expected: string,
-  contract: { readonly interface: Interface },
-): Promise<boolean> {
-  return matchesExpectedRevert(call, expected, contract.interface);
 }
 
 async function main() {
@@ -154,7 +136,7 @@ async function main() {
     await revertsWith(
       () => lpLock.connect(player).withdraw.staticCall(deployment.lpPositionId, player.address),
       "OwnableUnauthorizedAccount",
-      lpLock,
+      lpLock.interface,
     ),
     "OwnableUnauthorizedAccount",
   );
@@ -253,7 +235,7 @@ async function main() {
     await revertsWith(
       () => game.connect(player).placeBet.staticCall(0, minBet - 1n, 1n),
       "BetBelowMin",
-      game,
+      game.interface,
     ),
     `BetBelowMin — minBet ${ethers.formatUnits(minBet, 18)} RUSH`,
   );
@@ -264,7 +246,7 @@ async function main() {
     await revertsWith(
       () => game.connect(player).placeBet.staticCall(5, maxBetMoonshot + 10n ** 18n, 1n),
       "ExceedsMaxBet",
-      game,
+      game.interface,
     ),
     `ExceedsMaxBet — maxBet(1-in-1000) ${ethers.formatUnits(maxBetMoonshot, 18)} RUSH`,
   );
@@ -278,7 +260,7 @@ async function main() {
       await revertsWith(
         () => game.connect(player).placeBet.staticCall(0, STAKE, 1n),
         "EnforcedPause",
-        game,
+        game.interface,
       ),
       "EnforcedPause — placeBet refused while paused",
     );
@@ -321,6 +303,25 @@ async function main() {
   // --- Summary -------------------------------------------------------------
   const failed = results.filter((r) => !r.passed);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+
+  // Record the outcome so the published address list can state it. Without this the
+  // only evidence a checklist ever ran is a terminal scrollback nobody else can see —
+  // and "23/23 on testnet" is an acceptance criterion someone should be able to check.
+  writeFileSync(
+    join(__dirname, "..", "deployments", `checklist-${network.name}.json`),
+    JSON.stringify(
+      {
+        network: network.name,
+        chainId: deployment.chainId,
+        passed: results.length - failed.length,
+        total: results.length,
+        ranAt: new Date().toISOString(),
+        failures: failed.map((f) => f.name),
+      },
+      null,
+      2,
+    ) + "\n",
+  );
   if (failed.length > 0) {
     console.log("\nFAILED:");
     for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);

@@ -6,7 +6,7 @@ import {
   assertSelfDeployIsWarranted,
   deployUniswapV3Stack,
 } from "../scripts/lib/uniswap-v3-stack";
-import { seedPoolAndLock } from "../scripts/lib/seed-pool";
+import { POSITION_MANAGER_ABI, seedPoolAndLock } from "../scripts/lib/seed-pool";
 import { DEFAULT_FEE_TIER, fullRangeTicks } from "../scripts/lib/uniswap-price";
 
 /**
@@ -155,14 +155,11 @@ describe("Uniswap v3 stack for chains without one (#26)", () => {
         await ethers.getContractFactory("RushoodLPLock")
       ).deploy(ctx.stack.positionManager, ctx.feeRecipient.address, ctx.timelock.address);
 
+      // The same ABI the deploy script binds to — restating it here would let the two
+      // drift apart silently, which is the coincidence seed-pool.ts warns about.
       const manager = new ethers.Contract(
         ctx.stack.positionManager,
-        [
-          "function createAndInitializePoolIfNecessary(address token0, address token1, uint24 fee, uint160 sqrtPriceX96) payable returns (address pool)",
-          "function mint((address token0,address token1,uint24 fee,int24 tickLower,int24 tickUpper,uint256 amount0Desired,uint256 amount1Desired,uint256 amount0Min,uint256 amount1Min,address recipient,uint256 deadline) params) payable returns (uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)",
-          "function ownerOf(uint256 tokenId) view returns (address)",
-          "event IncreaseLiquidity(uint256 indexed tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)",
-        ],
+        [...POSITION_MANAGER_ABI],
         ctx.deployer,
       );
 

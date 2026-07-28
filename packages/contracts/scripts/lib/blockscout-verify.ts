@@ -170,7 +170,7 @@ async function attemptVerification(
   }
 
   const maxPolls = deps.maxPolls ?? DEFAULT_MAX_POLLS;
-  for (let attempt = 0; attempt < maxPolls; attempt++) {
+  for (let poll = 0; poll < maxPolls; poll++) {
     await sleep(deps.waitMs ?? DEFAULT_WAIT_MS);
     const status = interpretPoll(
       (await (
