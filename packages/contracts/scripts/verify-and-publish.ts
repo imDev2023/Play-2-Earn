@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { ethers, network, run } from "hardhat";
+import { dirname, join, resolve } from "node:path";
+import { artifacts, ethers, network } from "hardhat";
+import { CANONICAL_V3_POSITION_MANAGERS } from "./lib/uniswap-v3-stack";
+import { verifyContract } from "./lib/blockscout-verify";
 
 /**
  * Verify every deployed contract on Blockscout and publish the address list
@@ -102,27 +104,30 @@ async function main() {
   const verified: string[] = [];
   const failed: string[] = [];
 
+  const explorer = explorerBaseUrl();
+
   for (const target of targets) {
     try {
-      await run("verify:verify", {
-        address: target.address,
-        constructorArguments: target.constructorArguments,
-      });
-      console.log(`  OK    ${target.name} ${target.address}`);
-      verified.push(target.name);
-    } catch (error) {
-      const message = String((error as Error).message ?? error);
-      if (/already verified/i.test(message)) {
-        console.log(`  OK    ${target.name} ${target.address} (already verified)`);
+      const source = await buildSource(target);
+      const outcome = await verifyContract(explorer, source, { fetch: globalThis.fetch });
+
+      if (outcome.state === "verified" || outcome.state === "already-verified") {
+        const suffix = outcome.state === "already-verified" ? " (already verified)" : "";
+        console.log(`  OK    ${target.name} ${target.address}${suffix}`);
         verified.push(target.name);
       } else {
-        console.log(`  FAIL  ${target.name} ${target.address}\n        ${message.split("\n")[0]}`);
+        const detail = outcome.state === "timeout" ? "timed out waiting for Blockscout" : outcome.message;
+        console.log(`  FAIL  ${target.name} ${target.address}\n        ${detail}`);
         failed.push(target.name);
       }
+    } catch (error) {
+      console.log(
+        `  FAIL  ${target.name} ${target.address}\n        ${String((error as Error).message ?? error).split("\n")[0]}`,
+      );
+      failed.push(target.name);
     }
   }
 
-  const explorer = explorerBaseUrl();
   const markdown = renderAddressList(deployment, targets, explorer, verified);
   const docsDir = join(__dirname, "..", "..", "..", "docs", "deployments");
   mkdirSync(docsDir, { recursive: true });
@@ -136,6 +141,60 @@ async function main() {
     console.log(`\nFAILED: ${failed.join(", ")}`);
     process.exitCode = 1;
   }
+}
+
+/**
+ * Assemble everything Blockscout needs to recompile a contract exactly as it was deployed.
+ *
+ * The standard JSON input comes from the *same* Hardhat build-info the deployed artifact
+ * was produced by, found through the artifact's `.dbg.json`. Reconstructing the input by
+ * hand — or reusing whichever build-info happens to be first on disk — risks recompiling
+ * under different settings and producing bytecode that no longer matches the chain.
+ */
+async function buildSource(target: VerifyTarget) {
+  const artifact = await artifacts.readArtifact(target.name);
+  const artifactDir = join(__dirname, "..", "artifacts", artifact.sourceName);
+  const dbgPath = join(artifactDir, `${artifact.contractName}.dbg.json`);
+  const dbg = JSON.parse(readFileSync(dbgPath, "utf8"));
+  const buildInfo = JSON.parse(readFileSync(resolve(dirname(dbgPath), dbg.buildInfo), "utf8"));
+
+  const optimizer = buildInfo.input.settings?.optimizer ?? { enabled: false, runs: 200 };
+
+  return {
+    address: target.address,
+    // Fully qualified, so an inherited base with matching bytecode cannot be picked instead.
+    contractName: `${artifact.sourceName}:${artifact.contractName}`,
+    compilerVersion: `v${buildInfo.solcLongVersion}`,
+    standardInput: JSON.stringify(buildInfo.input),
+    constructorArgs: new ethers.Interface(artifact.abi).encodeDeploy(
+      target.constructorArguments as never[],
+    ),
+    optimizer: { enabled: Boolean(optimizer.enabled), runs: Number(optimizer.runs ?? 200) },
+  };
+}
+
+/**
+ * Say so when the pool is not on the chain's canonical Uniswap.
+ *
+ * Testnet 46630 has no Uniswap v3, so the rehearsal deploys its own factory and position
+ * manager. A pool there is real — real bytecode, real balances, real price — but nothing
+ * on the chain indexes it, and a reader who assumed otherwise would draw exactly the
+ * wrong conclusion about how tradeable the token is. Silence here would be the misleading
+ * option, so the provenance is stated rather than left to be inferred from an address.
+ */
+function uniswapProvenanceNote(deployment: Deployment): string {
+  const manager = deployment.lpPool?.positionManager;
+  if (!manager || deployment.lpPool?.usingMocks) return "";
+
+  const canonical = CANONICAL_V3_POSITION_MANAGERS[deployment.chainId];
+  if (canonical && canonical.toLowerCase() === manager.toLowerCase()) return "";
+
+  return (
+    `\n> **Self-deployed Uniswap v3.** This chain has no canonical Uniswap v3 deployment, so\n` +
+    `> one was stood up for this rehearsal (position manager \`${manager}\`, via\n` +
+    `> \`scripts/deploy-uniswap-v3.ts\`). The pool is genuine, but no router, aggregator or\n` +
+    `> price feed on this chain indexes it — do not read the liquidity as tradeable depth.\n`
+  );
 }
 
 function explorerBaseUrl(): string {
@@ -206,7 +265,7 @@ This is a **${deployment.chainId === 4663 ? "mainnet" : "testnet"}** deployment.
 > **Not a launch clearance.** The pre-mainnet gates named in the spec — security audit
 > and formal verification, gambling/regulatory clearance, and trademark review of the
 > RUSHOOD name — are owner-owned and are **not** implied by anything in this file.
-${deployment.lpPool?.usingMocks ? "\n> **Uniswap was mocked in this deployment** — the liquidity figures do not describe a real pool.\n" : ""}
+${deployment.lpPool?.usingMocks ? "\n> **Uniswap was mocked in this deployment** — the liquidity figures do not describe a real pool.\n" : ""}${uniswapProvenanceNote(deployment)}
 `;
 }
 
