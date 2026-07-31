@@ -11,7 +11,7 @@ import { type VerificationRequest, verifyContract } from "./lib/blockscout-verif
  *
  *   npx hardhat run scripts/verify-and-publish.ts --network robinhoodTestnet
  *
- * Reads deployments/<network>.json — which is gitignored, being a build artefact — and
+ * Reads deployments/<network>.json - which is gitignored, being a build artefact - and
  * writes docs/deployments/<network>.md, which is committed. That split is deliberate:
  * the JSON is what the relayer and frontend consume, the markdown is the public record
  * a holder can check, and only the latter belongs in git.
@@ -60,7 +60,7 @@ async function main() {
   const deployment: Deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 
   if (network.name === "localhost" || network.name === "hardhat") {
-    throw new Error("Nothing to verify on a local node — run this against a public network.");
+    throw new Error("Nothing to verify on a local node - run this against a public network.");
   }
 
   const targets: VerifyTarget[] = [
@@ -154,7 +154,7 @@ async function main() {
  *
  * The standard JSON input comes from the *same* Hardhat build-info the deployed artifact
  * was produced by, found through the artifact's `.dbg.json`. Reconstructing the input by
- * hand — or reusing whichever build-info happens to be first on disk — risks recompiling
+ * hand - or reusing whichever build-info happens to be first on disk - risks recompiling
  * under different settings and producing bytecode that no longer matches the chain.
  */
 async function buildSource(target: VerifyTarget): Promise<VerificationRequest> {
@@ -188,13 +188,13 @@ async function buildSource(target: VerifyTarget): Promise<VerificationRequest> {
 function checklistLine(): string {
   const path = join(__dirname, "..", "deployments", `checklist-${network.name}.json`);
   if (!existsSync(path)) {
-    return "**Not run against this deployment.** Run `scripts/launch-checklist.ts` — until it\npasses, nothing here has been exercised end to end.";
+    return "**Not run against this deployment.** Run `scripts/launch-checklist.ts` - until it\npasses, nothing here has been exercised end to end.";
   }
 
   const run = JSON.parse(readFileSync(path, "utf8"));
   const when = String(run.ranAt ?? "").slice(0, 10);
   if (run.passed === run.total) {
-    return `**${run.passed}/${run.total} checks passed** (${when}) — play across all six tiers, the
+    return `**${run.passed}/${run.total} checks passed** (${when}) - play across all six tiers, the
 public fairness verifier, bet caps, guardian pause/unpause, and the relayer-down refund
 after a real \`SETTLE_TIMEOUT\` wait.`;
   }
@@ -202,14 +202,14 @@ after a real \`SETTLE_TIMEOUT\` wait.`;
 }
 
 /**
- * Describe what the lock actually holds — including what it does not.
+ * Describe what the lock actually holds - including what it does not.
  *
  * The genesis split allocates 25% to liquidity, and on a full launch all of it is seeded
  * and locked. A scaled-down run seeds only part of it (`LP_ETH_AMOUNT` sets the ETH side
  * and the RUSH side follows at the pinned price), and `deploy-launch.ts` hands the
  * remainder to the Safe, *outside* the lock. Stating "liquidity is held by RushoodLPLock"
  * without that qualifier would describe a 2-year lock over a fraction of the tokens a
- * reader would reasonably assume it covers — on this testnet run, 0.2% of the bucket.
+ * reader would reasonably assume it covers - on this testnet run, 0.2% of the bucket.
  *
  * The unlocked remainder is the single most consequential number on this page for anyone
  * judging supply overhang, so it is stated in the same breath as the lock rather than
@@ -217,7 +217,7 @@ after a real \`SETTLE_TIMEOUT\` wait.`;
  */
 function liquidityCommitment(deployment: Deployment, unlock: string): string {
   const locked =
-    " is held by `RushoodLPLock` — the position cannot be withdrawn before\n" +
+    " is held by `RushoodLPLock` - the position cannot be withdrawn before\n" +
     `  **${unlock}**. The contract exposes no approve, no liquidity decrease and no call\n` +
     "  forwarder, so the position cannot leave by any other route. Call `isLocked()` to confirm.";
 
@@ -229,7 +229,7 @@ function liquidityCommitment(deployment: Deployment, unlock: string): string {
     `${locked}\n` +
     `  **Only ${formatRush(seeded)} RUSH of the 250,000,000 liquidity allocation is in that\n` +
     `  position.** The remaining ${formatRush(unseeded)} RUSH was sent to the Safe\n` +
-    `  (\`${deployment.governanceSafe}\`) and is **not** locked — treat it as\n` +
+    `  (\`${deployment.governanceSafe}\`) and is **not** locked - treat it as\n` +
     "  circulating overhang, not as committed liquidity."
   );
 }
@@ -243,7 +243,7 @@ function formatRush(wei: bigint): string {
  * Say so when the pool is not on the chain's canonical Uniswap.
  *
  * Testnet 46630 has no Uniswap v3, so the rehearsal deploys its own factory and position
- * manager. A pool there is real — real bytecode, real balances, real price — but nothing
+ * manager. A pool there is real - real bytecode, real balances, real price - but nothing
  * on the chain indexes it, and a reader who assumed otherwise would draw exactly the
  * wrong conclusion about how tradeable the token is. Silence here would be the misleading
  * option, so the provenance is stated rather than left to be inferred from an address.
@@ -259,7 +259,7 @@ function uniswapProvenanceNote(deployment: Deployment): string {
     `\n> **Self-deployed Uniswap v3.** This chain has no canonical Uniswap v3 deployment, so\n` +
     `> one was stood up for this rehearsal (position manager \`${manager}\`, via\n` +
     `> \`scripts/deploy-uniswap-v3.ts\`). The pool is genuine, but no router, aggregator or\n` +
-    `> price feed on this chain indexes it — do not read the liquidity as tradeable depth.\n`
+    `> price feed on this chain indexes it - do not read the liquidity as tradeable depth.\n`
   );
 }
 
@@ -271,7 +271,7 @@ function explorerBaseUrl(): string {
 }
 
 /**
- * The public record. Deliberately states what is *not* done as well as what is — a
+ * The public record. Deliberately states what is *not* done as well as what is - a
  * published address list that implied the pre-mainnet audit, legal and trademark gates
  * were cleared would be actively misleading.
  */
@@ -293,7 +293,7 @@ function renderAddressList(
     .toISOString()
     .slice(0, 10);
 
-  return `# RUSHOOD deployment — ${deployment.network} (chain ${deployment.chainId})
+  return `# RUSHOOD deployment - ${deployment.network} (chain ${deployment.chainId})
 
 Generated by \`scripts/verify-and-publish.ts\`. Addresses are canonical; verify each
 against the explorer rather than trusting this file.
@@ -311,7 +311,7 @@ ${rows}
 
 ## Commitments a holder can check on-chain
 
-- **Team allocation** is held by \`RushoodVesting\` — nothing releasable until **${cliff}**
+- **Team allocation** is held by \`RushoodVesting\` - nothing releasable until **${cliff}**
   (6-month cliff), then linear to fully vested at month 24.
 - **Liquidity**${liquidityCommitment(deployment, unlock)}
 - **Governance** of the game's parameters is the Timelock at
@@ -330,10 +330,10 @@ ${checklistLine()}
 
 This is a **${deployment.chainId === 4663 ? "mainnet" : "testnet"}** deployment.
 
-> **Not a launch clearance.** The pre-mainnet gates named in the spec — security audit
+> **Not a launch clearance.** The pre-mainnet gates named in the spec - security audit
 > and formal verification, gambling/regulatory clearance, and trademark review of the
-> RUSHOOD name — are owner-owned and are **not** implied by anything in this file.
-${deployment.lpPool?.usingMocks ? "\n> **Uniswap was mocked in this deployment** — the liquidity figures do not describe a real pool.\n" : ""}${uniswapProvenanceNote(deployment)}
+> RUSHOOD name - are owner-owned and are **not** implied by anything in this file.
+${deployment.lpPool?.usingMocks ? "\n> **Uniswap was mocked in this deployment** - the liquidity figures do not describe a real pool.\n" : ""}${uniswapProvenanceNote(deployment)}
 `;
 }
 

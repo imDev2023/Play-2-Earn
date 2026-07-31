@@ -12,13 +12,13 @@ import { DEFAULT_FEE_TIER, fullRangeTicks } from "../scripts/lib/uniswap-price";
 /**
  * Standing up Uniswap v3 ourselves (#26).
  *
- * Robinhood Chain testnet 46630 has no Uniswap v3 — the published deployments cover
+ * Robinhood Chain testnet 46630 has no Uniswap v3 - the published deployments cover
  * mainnet 4663 only, and `eth_getCode` at every mainnet address on 46630 comes back
  * empty. So the launch rehearsal has to bring its own factory and position manager.
  *
  * The point of these tests is that the stack we stand up is a *real* Uniswap, not a
  * second mock wearing its name. The mocked seeding tests in SeedPool.ts prove the
- * plumbing; these prove the plumbing works against the actual AMM — a real pool at a
+ * plumbing; these prove the plumbing works against the actual AMM - a real pool at a
  * real address, holding real balances, minted through the real position manager.
  */
 
@@ -67,8 +67,8 @@ describe("Uniswap v3 stack for chains without one (#26)", () => {
 
     /**
      * The periphery addresses pools by CREATE2, using a pool init-code hash baked in at
-     * *compile* time. Deploying a factory built from different source — even a faithful
-     * one — makes every address the position manager computes point at nothing, and the
+     * *compile* time. Deploying a factory built from different source - even a faithful
+     * one - makes every address the position manager computes point at nothing, and the
      * failure surfaces as an unhelpful revert deep inside a mint. Using Uniswap's own
      * published artifacts is what keeps the two in agreement, so it is worth asserting.
      */
@@ -155,7 +155,7 @@ describe("Uniswap v3 stack for chains without one (#26)", () => {
         await ethers.getContractFactory("RushoodLPLock")
       ).deploy(ctx.stack.positionManager, ctx.feeRecipient.address, ctx.timelock.address);
 
-      // The same ABI the deploy script binds to — restating it here would let the two
+      // The same ABI the deploy script binds to - restating it here would let the two
       // drift apart silently, which is the coincidence seed-pool.ts warns about.
       const manager = new ethers.Contract(
         ctx.stack.positionManager,
@@ -237,7 +237,7 @@ describe("Uniswap v3 stack for chains without one (#26)", () => {
 
   /**
    * Deploying a second factory on a chain that already has Uniswap would create a pool
-   * no aggregator, router or price feed looks at — a launch that appears seeded but is
+   * no aggregator, router or price feed looks at - a launch that appears seeded but is
    * invisible. On mainnet 4663 that is the difference between a real listing and a
    * silent one, so the script refuses rather than warns.
    */

@@ -5,15 +5,15 @@ import { matchesCustomError, revertData, revertsWith } from "../scripts/lib/reve
 /**
  * Matching a custom error across RPC providers (#26).
  *
- * The launch checklist's negative items — "a bet below minBet is rejected", "a non-owner
- * cannot withdraw" — only mean anything if they can tell *which* error came back. A
+ * The launch checklist's negative items - "a bet below minBet is rejected", "a non-owner
+ * cannot withdraw" - only mean anything if they can tell *which* error came back. A
  * check that accepts any revert passes just as happily on a mistyped address.
  *
  * The catch is that providers disagree about how to report one. Hardhat's in-process node
  * hands ethers a decoded `revert` object; a public RPC node returns the raw ABI-encoded
  * error bytes and ethers leaves `revert` undefined. The original implementation only read
  * the decoded form, so every negative item failed against a real chain while passing
- * locally — which is why the local dry run went green and testnet did not.
+ * locally - which is why the local dry run went green and testnet did not.
  */
 
 const IFACE = new Interface([
@@ -84,7 +84,7 @@ describe("custom-error matching across providers (#26)", () => {
     });
 
     /**
-     * A selector the interface does not know is a revert from somewhere unexpected —
+     * A selector the interface does not know is a revert from somewhere unexpected -
      * a different contract, or a proxy. Not a match, and not a crash either.
      */
     it("does not match an error the interface cannot decode", () => {

@@ -2,7 +2,7 @@
  * Source verification against Blockscout's Etherscan-compatible API (#26).
  *
  * Why not `hardhat-verify`: it sends `constructorArguements` as bare hex, and the
- * Robinhood Chain explorer only accepts them `0x`-prefixed. The rejection is invisible —
+ * Robinhood Chain explorer only accepts them `0x`-prefixed. The rejection is invisible -
  * the submission is accepted, queued, and comes back "Fail - Unable to verify" with no
  * indication that the arguments were the problem. Every launch contract takes constructor
  * arguments, so all six failed; `WETH9`, which takes none, verified through the identical
@@ -45,7 +45,7 @@ export type VerifyOutcome =
   | { readonly state: "failed"; readonly message: string; readonly rejected?: boolean }
   | { readonly state: "timeout" };
 
-/** The slice of `fetch` this module uses — narrow enough that a test stub can stand in. */
+/** The slice of `fetch` this module uses - narrow enough that a test stub can stand in. */
 export type FetchLike = (
   url: string,
   init?: { method?: string; headers?: Record<string, string>; body?: string },
@@ -67,7 +67,7 @@ const DEFAULT_ATTEMPTS = 3;
 /**
  * Build the form body for a `verifysourcecode` submission.
  *
- * The `constructorArguements` misspelling is Etherscan's, and Blockscout copies it — the
+ * The `constructorArguements` misspelling is Etherscan's, and Blockscout copies it - the
  * correctly-spelled variant is ignored, which is its own silent failure.
  */
 export function buildVerifyForm(request: VerificationRequest): URLSearchParams {
@@ -120,13 +120,13 @@ export function interpretPoll(response: ApiResponse): "pending" | "verified" | "
  * Verify one contract, retrying an opaque failure.
  *
  * Blockscout reports "Fail - Unable to verify" both for a genuine source mismatch and for
- * a transient fault in its own verifier queue — the two are indistinguishable from the
+ * a transient fault in its own verifier queue - the two are indistinguishable from the
  * response. Observed directly on this explorer: two contracts failed on one run and
  * verified on the next from byte-identical submissions. Retrying costs a minute; treating
  * a transient fault as final means a launch script that reports unverified contracts and
  * has to be re-run by hand.
  *
- * A submission Blockscout *rejects* outright is not retried — that is a deterministic
+ * A submission Blockscout *rejects* outright is not retried - that is a deterministic
  * complaint about the request, and repeating it would only repeat the complaint.
  */
 export async function verifyContract(
@@ -164,7 +164,7 @@ async function attemptVerification(
   );
 
   if (submitted.state === "already-verified") return { state: "already-verified" };
-  // Rejected before it ever reached the compiler — deterministic, so don't retry it.
+  // Rejected before it ever reached the compiler - deterministic, so don't retry it.
   if (submitted.state === "error") {
     return { state: "failed", message: submitted.message, rejected: true };
   }

@@ -11,7 +11,7 @@ import type { Interface } from "ethers";
  * Providers disagree about how a revert arrives. Hardhat's in-process node decodes it and
  * hands ethers a `revert: { name }`; a public RPC node returns the ABI-encoded error bytes
  * and ethers leaves `revert` undefined. Reading only the decoded form works locally and
- * fails on every real chain — so this reads both, and decodes the bytes against the
+ * fails on every real chain - so this reads both, and decodes the bytes against the
  * contract's own interface rather than a hand-maintained table of selectors.
  */
 
@@ -35,7 +35,7 @@ export function revertData(error: unknown): string | undefined {
   if (!candidate || typeof candidate !== "object") return undefined;
 
   for (const value of [candidate.data, candidate.info?.error?.data, candidate.error?.data]) {
-    // A selector alone is 4 bytes — "0x" plus 8 characters.
+    // A selector alone is 4 bytes - "0x" plus 8 characters.
     if (typeof value === "string" && value.startsWith("0x") && value.length >= 10) return value;
   }
   return undefined;
@@ -45,7 +45,7 @@ export function revertData(error: unknown): string | undefined {
  * Does this error represent a revert with the named custom error?
  *
  * Tries the decoded form first, then the raw bytes, then the message. The message check
- * is last and deliberately loose — it only sees errors that carried no structured data,
+ * is last and deliberately loose - it only sees errors that carried no structured data,
  * where a substring is the only evidence available.
  */
 export function matchesCustomError(error: unknown, expected: string, iface: Interface): boolean {
@@ -56,7 +56,7 @@ export function matchesCustomError(error: unknown, expected: string, iface: Inte
   if (data) {
     try {
       const parsed = iface.parseError(data);
-      // A selector this interface does not know came from somewhere unexpected — a
+      // A selector this interface does not know came from somewhere unexpected - a
       // different contract, say. That is not the refusal being tested.
       if (parsed) return parsed.name === expected;
       return false;
@@ -71,7 +71,7 @@ export function matchesCustomError(error: unknown, expected: string, iface: Inte
 /**
  * Run a call expected to revert, and report whether it refused for the expected reason.
  *
- * Returns false if the call *succeeds* — the case that matters most, since a check that
+ * Returns false if the call *succeeds* - the case that matters most, since a check that
  * treated an unexpectedly-permitted action as a pass would be worse than no check.
  */
 export async function revertsWith(

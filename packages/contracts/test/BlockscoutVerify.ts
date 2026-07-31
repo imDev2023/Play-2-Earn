@@ -11,7 +11,7 @@ import {
  *
  * `hardhat-verify` cannot verify against the Robinhood Chain explorer: it sends the
  * constructor arguments as bare hex, and this Blockscout rejects anything without an
- * `0x` prefix — silently, as a plain "Fail - Unable to verify" after the submission has
+ * `0x` prefix - silently, as a plain "Fail - Unable to verify" after the submission has
  * already been accepted. Contracts with no constructor arguments verify fine through the
  * same path, which is what pins the cause to the arguments rather than the source.
  *
@@ -29,7 +29,7 @@ const REQUEST = {
 
 describe("Blockscout verification (#26)", () => {
   describe("buildVerifyForm", () => {
-    it("prefixes constructor arguments with 0x — the bug that blocked every launch contract", () => {
+    it("prefixes constructor arguments with 0x - the bug that blocked every launch contract", () => {
       const form = buildVerifyForm({ ...REQUEST, constructorArgs: "0000000000000000000000008ec5" });
 
       expect(form.get("constructorArguements")).to.equal("0x0000000000000000000000008ec5");
@@ -184,7 +184,7 @@ describe("Blockscout verification (#26)", () => {
      * Observed on the real explorer: RushoodGame and RushoodVesting reported
      * "Fail - Unable to verify" on one run and verified on the next, with byte-identical
      * submissions. Since the failure is opaque, a single attempt cannot tell a transient
-     * queue fault from a genuine mismatch — so retry rather than report a false failure
+     * queue fault from a genuine mismatch - so retry rather than report a false failure
      * and make someone re-run the launch script by hand.
      */
     it("retries an opaque failure before giving up on it", async () => {

@@ -14,7 +14,7 @@ import {
  *   npx hardhat run scripts/deploy-uniswap-v3.ts --network robinhoodTestnet
  *
  * Robinhood Chain testnet 46630 has no Uniswap v3, so the launch rehearsal has no pool
- * to seed and `deploy-launch.ts` — which refuses to guess a position manager — has
+ * to seed and `deploy-launch.ts` - which refuses to guess a position manager - has
  * nothing to point at. This script fills that gap and prints the two environment
  * variables the launch deploy needs.
  *
@@ -22,7 +22,7 @@ import {
  * refuses to run there rather than shadow it.
  *
  * Writes deployments/uniswap-<network>.json and re-uses it on a second run, so a failed
- * launch deploy can be retried without paying for another factory or — worse — silently
+ * launch deploy can be retried without paying for another factory or - worse - silently
  * seeding into a second, different pool.
  */
 
@@ -37,7 +37,7 @@ async function main() {
 
   const existing = await loadIfStillDeployed(path);
   if (existing) {
-    console.log(`Uniswap v3 already stood up on ${network.name} — reusing.`);
+    console.log(`Uniswap v3 already stood up on ${network.name} - reusing.`);
     printLaunchEnv(existing);
     return;
   }
@@ -47,7 +47,7 @@ async function main() {
   console.log(`  balance   ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} ETH\n`);
 
   // WETH first, so the position manager can be given its address. An existing canonical
-  // wrapper wins if one is named — this only deploys because 46630 has none whose
+  // wrapper wins if one is named - this only deploys because 46630 has none whose
   // behaviour we can vouch for.
   const configuredWeth = process.env.WETH_ADDRESS;
   let weth9: string;
@@ -87,7 +87,7 @@ async function main() {
 /**
  * Confirm the stack actually works before anything is asked to seed into it.
  *
- * A deploy that succeeds transactionally can still be unusable — a mislinked descriptor
+ * A deploy that succeeds transactionally can still be unusable - a mislinked descriptor
  * or a factory/periphery mismatch only surfaces when a mint reverts. Checking here means
  * the failure lands in this script rather than halfway through the launch sequence, with
  * the genesis allocation already distributed.

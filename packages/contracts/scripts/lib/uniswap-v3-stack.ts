@@ -8,7 +8,7 @@ import PositionManagerArtifact from "@uniswap/v3-periphery/artifacts/contracts/N
 /**
  * Stand up Uniswap v3 on a chain that does not have it (#26).
  *
- * Robinhood Chain testnet 46630 has no Uniswap v3 deployment — Uniswap publishes
+ * Robinhood Chain testnet 46630 has no Uniswap v3 deployment - Uniswap publishes
  * addresses for mainnet 4663 only, and `eth_getCode` at each of those addresses on 46630
  * comes back empty. (The UniversalRouter address does have code on testnet, but it is a
  * same-nonce mirror whose immutables point at the mainnet factory and position manager,
@@ -29,11 +29,11 @@ import PositionManagerArtifact from "@uniswap/v3-periphery/artifacts/contracts/N
  * Chains where Uniswap v3 is already deployed, and the position manager to use there.
  *
  * Consulted only to *refuse*: standing up a second factory next to a canonical one would
- * put the launch liquidity in a pool that no router, aggregator or price feed indexes —
+ * put the launch liquidity in a pool that no router, aggregator or price feed indexes -
  * a launch that looks seeded from the deploy log and is invisible everywhere else.
  */
 export const CANONICAL_V3_POSITION_MANAGERS: Readonly<Record<number, string>> = {
-  // Robinhood Chain mainnet — developers.uniswap.org, v3 Robinhood Chain deployments.
+  // Robinhood Chain mainnet - developers.uniswap.org, v3 Robinhood Chain deployments.
   4663: "0x73991a25c818bf1f1128deaab1492d45638de0d3",
 };
 
@@ -51,7 +51,7 @@ export function assertSelfDeployIsWarranted(chainId: bigint): void {
   const canonical = CANONICAL_V3_POSITION_MANAGERS[Number(chainId)];
   if (canonical) {
     throw new Error(
-      `Chain ${chainId} already has Uniswap v3 — deploying another factory would seed the ` +
+      `Chain ${chainId} already has Uniswap v3 - deploying another factory would seed the ` +
         `launch liquidity into a pool nothing indexes. Set UNISWAP_POSITION_MANAGER=${canonical} ` +
         `and use the canonical deployment instead.`,
     );
@@ -93,7 +93,7 @@ export async function deployUniswapV3Stack(
 
   // The descriptor renders the position NFT's on-chain SVG. It is cosmetic, but the
   // position manager takes it as a constructor argument, and passing the zero address
-  // there leaves `tokenURI` reverting on every position — including the launch one, in
+  // there leaves `tokenURI` reverting on every position - including the launch one, in
   // any wallet that tries to display it.
   const nftDescriptorLibrary = await deployFrom(
     NFTDescriptorArtifact.abi,
@@ -138,7 +138,7 @@ async function deployFrom(
  * Splice a deployed library address into unlinked bytecode.
  *
  * Solidity leaves `__$<hash>$__` placeholders where a linked library's address belongs.
- * Only the descriptor needs this — `NFTDescriptor` is too large to inline.
+ * Only the descriptor needs this - `NFTDescriptor` is too large to inline.
  */
 function linkLibrary(bytecode: string, name: string, address: string): string {
   const placeholder = new RegExp(`__\\$[0-9a-fA-F]{34}\\$__|__${name}_+`, "g");

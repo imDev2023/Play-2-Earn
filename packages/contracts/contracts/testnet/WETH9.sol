@@ -13,8 +13,8 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 ///      wrapper is exactly the guess `deploy-launch.ts` refuses to make, hence our own.
 ///
 ///      Mainnet uses the chain's canonical WETH; this contract is not part of that
-///      deployment. It implements the `IWETH9` surface the Uniswap periphery calls —
-///      `deposit`, `withdraw`, and the ERC20 methods — and nothing more.
+///      deployment. It implements the `IWETH9` surface the Uniswap periphery calls -
+///      `deposit`, `withdraw`, and the ERC20 methods - and nothing more.
 contract WETH9 is ERC20 {
     /// @notice Thrown when a withdrawal's ETH transfer fails.
     error EthTransferFailed();
