@@ -1,7 +1,11 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ethers, network } from "hardhat";
 import { verifyRoll } from "@rushood/verifier";
+// Reports *which* custom error came back, not merely that something reverted - a
+// checklist accepting any revert would pass on a mistyped address. Takes the contract's
+// Interface because a public RPC node returns the revert as raw ABI-encoded bytes.
+import { revertsWith } from "./lib/revert-matching";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead } from "./lib/relayer-core";
 import { MAX_SUPPLY, allocations } from "./lib/genesis";
@@ -9,9 +13,9 @@ import { MAX_SUPPLY, allocations } from "./lib/genesis";
 /**
  * The launch-checklist dry run (#26, spec §10 / §11).
  *
- * Runs the whole system the way a launch day would exercise it — play across every
+ * Runs the whole system the way a launch day would exercise it - play across every
  * tier, force the relayer-down refund, hit the caps, pause and unpause, and recompute a
- * settled roll with the public verifier — and reports pass/fail per item.
+ * settled roll with the public verifier - and reports pass/fail per item.
  *
  *   npx hardhat run scripts/launch-checklist.ts --network localhost
  *   npx hardhat run scripts/launch-checklist.ts --network robinhoodTestnet
@@ -42,27 +46,7 @@ const results: CheckResult[] = [];
 /** Records rather than throwing, so one failed item doesn't hide the rest. */
 function check(name: string, passed: boolean, detail: string): void {
   results.push({ name, passed, detail });
-  console.log(`  ${passed ? "PASS" : "FAIL"}  ${name} — ${detail}`);
-}
-
-/**
- * Run a call expected to revert, and report *which* custom error came back.
- *
- * Catching any error would let these checks pass for the wrong reason — a mistyped
- * address or a bad argument reverts too, and a checklist that goes green on a broken
- * deployment is worse than no checklist. Matching the specific error name means the
- * item only passes when the contract refused for the reason being tested.
- */
-async function revertsWith(call: () => Promise<unknown>, expected: string): Promise<boolean> {
-  try {
-    await call();
-    return false;
-  } catch (error) {
-    const name = (error as { revert?: { name?: string } }).revert?.name;
-    if (name) return name === expected;
-    // Not a decodable custom error (an RPC-level revert, say) — fall back to the text.
-    return String((error as Error).message ?? "").includes(expected);
-  }
+  console.log(`  ${passed ? "PASS" : "FAIL"}  ${name} - ${detail}`);
 }
 
 async function main() {
@@ -83,13 +67,13 @@ async function main() {
   const vesting = await ethers.getContractAt("RushoodVesting", deployment.vesting);
   const lpLock = await ethers.getContractAt("RushoodLPLock", deployment.lpLock);
 
-  console.log(`\nLaunch checklist — ${network.name} (chain ${deployment.chainId})\n`);
+  console.log(`\nLaunch checklist - ${network.name} (chain ${deployment.chainId})\n`);
 
   // --- Genesis allocation --------------------------------------------------
   //
   // Exact bucket equality is asserted by deploy-launch.ts, at the one moment it holds.
-  // By the time this runs the game may have been played — stakes flow into the treasury
-  // and burns leave the supply — so checking for pristine genesis numbers here would
+  // By the time this runs the game may have been played - stakes flow into the treasury
+  // and burns leave the supply - so checking for pristine genesis numbers here would
   // fail on a *working* system. These are the invariants that survive play.
   console.log("Token supply and allocation");
   const expected = allocations();
@@ -152,6 +136,7 @@ async function main() {
     await revertsWith(
       () => lpLock.connect(player).withdraw.staticCall(deployment.lpPositionId, player.address),
       "OwnableUnauthorizedAccount",
+      lpLock.interface,
     ),
     "OwnableUnauthorizedAccount",
   );
@@ -166,6 +151,14 @@ async function main() {
   // --- Play across every tier ---------------------------------------------
   console.log("\nPlay across all tiers");
   const chain = epochChain(MASTER_SEED, 0, CHAIN_LENGTH);
+
+  // The game allows one bet at a time, so a bet left in flight by an interrupted run
+  // makes every placeBet below revert with BetAlreadyActive - and the checklist would
+  // fail on a deployment that is actually fine. A testnet run takes over an hour
+  // (SETTLE_TIMEOUT is waited out for real), so interruptions are the normal case, and
+  // the alternative recovery is redeploying the whole launch stack.
+  await settleAnyBetLeftInFlight(game, chain, relayer);
+
   let lastSettled: { betId: bigint; tier: number; clientSeed: bigint; reveal: string } | null = null;
 
   for (let tier = 0; tier < TIER_COUNT; tier++) {
@@ -201,7 +194,7 @@ async function main() {
   console.log("\nPublic fairness verifier");
   if (lastSettled) {
     // Ask the chain what it settled on, then hand that to the verifier as the reported
-    // result — so this checks the two agree, not merely that the verifier runs.
+    // result - so this checks the two agree, not merely that the verifier runs.
     const [chainRoll, chainWin] = await game.outcomeOf(
       lastSettled.reveal,
       lastSettled.clientSeed,
@@ -242,8 +235,9 @@ async function main() {
     await revertsWith(
       () => game.connect(player).placeBet.staticCall(0, minBet - 1n, 1n),
       "BetBelowMin",
+      game.interface,
     ),
-    `BetBelowMin — minBet ${ethers.formatUnits(minBet, 18)} RUSH`,
+    `BetBelowMin - minBet ${ethers.formatUnits(minBet, 18)} RUSH`,
   );
 
   const maxBetMoonshot = await game.maxBet(5);
@@ -252,8 +246,9 @@ async function main() {
     await revertsWith(
       () => game.connect(player).placeBet.staticCall(5, maxBetMoonshot + 10n ** 18n, 1n),
       "ExceedsMaxBet",
+      game.interface,
     ),
-    `ExceedsMaxBet — maxBet(1-in-1000) ${ethers.formatUnits(maxBetMoonshot, 18)} RUSH`,
+    `ExceedsMaxBet - maxBet(1-in-1000) ${ethers.formatUnits(maxBetMoonshot, 18)} RUSH`,
   );
 
   // --- Pause ---------------------------------------------------------------
@@ -265,8 +260,9 @@ async function main() {
       await revertsWith(
         () => game.connect(player).placeBet.staticCall(0, STAKE, 1n),
         "EnforcedPause",
+        game.interface,
       ),
-      "EnforcedPause — placeBet refused while paused",
+      "EnforcedPause - placeBet refused while paused",
     );
 
     await (await game.connect(safeSigner).unpause()).wait();
@@ -275,7 +271,7 @@ async function main() {
     check(
       "guardian can pause and bets are refused",
       false,
-      `guardian ${deployment.guardian} is not among the available signers — supply its key`,
+      `guardian ${deployment.guardian} is not among the available signers - supply its key`,
     );
   }
 
@@ -307,6 +303,25 @@ async function main() {
   // --- Summary -------------------------------------------------------------
   const failed = results.filter((r) => !r.passed);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+
+  // Record the outcome so the published address list can state it. Without this the
+  // only evidence a checklist ever ran is a terminal scrollback nobody else can see -
+  // and "23/23 on testnet" is an acceptance criterion someone should be able to check.
+  writeFileSync(
+    join(__dirname, "..", "deployments", `checklist-${network.name}.json`),
+    JSON.stringify(
+      {
+        network: network.name,
+        chainId: deployment.chainId,
+        passed: results.length - failed.length,
+        total: results.length,
+        ranAt: new Date().toISOString(),
+        failures: failed.map((f) => f.name),
+      },
+      null,
+      2,
+    ) + "\n",
+  );
   if (failed.length > 0) {
     console.log("\nFAILED:");
     for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);
@@ -319,6 +334,31 @@ async function main() {
         "      exercise the lock, not a real pool.",
     );
   }
+}
+
+/**
+ * Settle a bet left active by a previous, interrupted run.
+ *
+ * Settling rather than refunding: a refund would mean waiting out SETTLE_TIMEOUT again
+ * before the checklist could even start. The outcome of this bet is irrelevant - it is
+ * not one of the checked items, it exists only to return the game to an idle state.
+ */
+async function settleAnyBetLeftInFlight(
+  game: {
+    activeBetId(): Promise<bigint>;
+    currentCommit(): Promise<string>;
+    connect(signer: unknown): { settleBet(reveal: string): Promise<{ wait(): Promise<unknown> }> };
+  },
+  chain: string[],
+  relayer: unknown,
+): Promise<void> {
+  const active = await game.activeBetId();
+  if (active === 0n) return;
+
+  const head = await game.currentCommit();
+  const round = roundForHead(chain, head);
+  console.log(`  clearing bet #${active} left active by an earlier run`);
+  await (await game.connect(relayer).settleBet(chain[round])).wait();
 }
 
 function waitSeconds(seconds: number): Promise<void> {
