@@ -4,11 +4,10 @@ import { formatUnits } from "viem";
  * Why a bet cannot be placed, decided before the wallet is ever asked.
  *
  * This exists because `placeBet` asks for a spending approval first. A stake the
- * player cannot cover therefore costs them a wallet prompt - one their wallet flags in
- * red, since the approval is unlimited - followed by a transaction that reverts inside
- * an ERC-20 transfer, and the error that comes back names `transferFrom` rather than
- * their balance. Every reason below is knowable from state already on screen, so none
- * of them should ever reach the chain.
+ * player cannot cover therefore costs them a wallet prompt, followed by a transaction
+ * that reverts inside an ERC-20 transfer, and the error that comes back names
+ * `transferFrom` rather than their balance. Every reason below is knowable from state
+ * already on screen, so none of them should ever reach the chain.
  *
  * Kept as a pure function of four values so the thresholds can be argued with in a
  * test rather than discovered by a player.
