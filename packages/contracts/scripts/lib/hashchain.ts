@@ -13,7 +13,7 @@ export const DEFAULT_CHAIN_LENGTH = 256;
  * Returns `nodes` where `nodes[i] = keccak256(nodes[i+1])`, so:
  *   - `nodes[0]` is the genesis commitment deployed as the chain head, and
  *   - `nodes[k]` (k >= 1) is the reveal for round k, satisfying
- *     `keccak256(nodes[k]) == nodes[k-1]` — exactly what `settleBet` checks.
+ *     `keccak256(nodes[k]) == nodes[k-1]` - exactly what `settleBet` checks.
  *
  * The tail is derived deterministically from `masterSeed` so the deploy script and
  * the relayer stand-in compute an identical chain. This is a LOCAL DEV construction:

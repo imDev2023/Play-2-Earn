@@ -3,8 +3,8 @@
  *
  * Seeding a v3 pool means choosing three things: which token is `token0`, the initial
  * `sqrtPriceX96`, and the tick range the liquidity sits in. All three are easy to get
- * quietly wrong — an inverted price seeds the pool at 1e14× the intended rate and the
- * first swap drains it — so the arithmetic lives here, in a module with unit tests,
+ * quietly wrong - an inverted price seeds the pool at 1e14× the intended rate and the
+ * first swap drains it - so the arithmetic lives here, in a module with unit tests,
  * rather than inline in a deploy script that only ever runs once.
  *
  * Everything is integer maths on bigints. Floating point is deliberately avoided:
@@ -78,7 +78,7 @@ export function encodeSqrtPriceX96(amount0: bigint, amount1: bigint): bigint {
 }
 
 /**
- * The widest tick range a fee tier allows — liquidity across the entire price curve.
+ * The widest tick range a fee tier allows - liquidity across the entire price curve.
  *
  * Full range is the right shape for a launch pool: the price has no history to
  * concentrate around, and a range order that the price walks out of would leave the
@@ -98,7 +98,7 @@ export function fullRangeTicks(feeTier: number = DEFAULT_FEE_TIER): {
   };
 }
 
-/** What the caller wants to seed, in their own terms — "this much RUSH against this much WETH". */
+/** What the caller wants to seed, in their own terms - "this much RUSH against this much WETH". */
 export interface SeedRequest {
   readonly tokenA: string;
   readonly amountA: bigint;

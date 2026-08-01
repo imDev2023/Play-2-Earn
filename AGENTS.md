@@ -14,4 +14,4 @@ The canonical five triage roles, with names unchanged (`needs-triage`, `needs-in
 
 ### Domain docs
 
-**Multi-context** layout — a `CONTEXT-MAP.md` at the repo root points to per-context `CONTEXT.md` files (e.g. contracts and frontend as separate contexts). These are created lazily by `/domain-modeling`, not upfront. See `docs/agents/domain.md`.
+**Multi-context** layout - a `CONTEXT-MAP.md` at the repo root points to per-context `CONTEXT.md` files (e.g. contracts and frontend as separate contexts). These are created lazily by `/domain-modeling`, not upfront. See `docs/agents/domain.md`.

@@ -11,7 +11,7 @@ import { FairnessDisclosure } from "./FairnessDisclosure";
  * The in-app fairness panel: the house's commitment, the player's own entropy, and a
  * one-click link into the public `/verify` tool.
  *
- * It also re-runs the check locally and shows the verdict inline — the app doing its
+ * It also re-runs the check locally and shows the verdict inline - the app doing its
  * homework in front of you. That is a convenience, not the proof: the proof is the
  * link, which carries every input so it can be re-checked anywhere, by anyone,
  * including from the command line.
@@ -22,7 +22,7 @@ export function FairnessPanel({
 }: {
   /** The most recent bet, if there is one. */
   bet?: BetEntry;
-  /** Head of the server hash chain — what the *next* bet will be locked against. */
+  /** Head of the server hash chain - what the *next* bet will be locked against. */
   standingCommit?: `0x${string}`;
 }) {
   const [showDetail, setShowDetail] = useState(false);
@@ -55,7 +55,7 @@ export function FairnessPanel({
         <>
           <Row
             title="The house committed first"
-            hint="Published before your bet — it can't change its secret now."
+            hint="Published before your bet - it can't change its secret now."
             value={bet.commit}
             testId="fairness-commitment"
           />
@@ -68,19 +68,19 @@ export function FairnessPanel({
           {bet.reveal ? (
             <Row
               title="The house revealed its secret"
-              hint="Hashes to the commitment above — the contract rejects anything else."
+              hint="Hashes to the commitment above - the contract rejects anything else."
               value={bet.reveal}
               testId="fairness-reveal"
             />
           ) : (
             <p data-testid="fairness-pending" style={hint}>
-              Waiting on the reveal. Once this bet settles you can verify it — and if the
+              Waiting on the reveal. Once this bet settles you can verify it - and if the
               house never settles, you can take your stake back after an hour.
             </p>
           )}
           {verdict && (
             <p data-testid="fairness-roll" className="mono" style={hint}>
-              roll {verdict.computed.roll.toString()} of {verdict.computed.odds.toString()} —{" "}
+              roll {verdict.computed.roll.toString()} of {verdict.computed.odds.toString()} -{" "}
               {verdict.computed.win ? "a win (roll 0)" : "a miss (a win is roll 0)"}
             </p>
           )}
@@ -112,7 +112,7 @@ export function FairnessPanel({
             />
           )}
           <p data-testid="fairness-empty" style={hint}>
-            Place a bet and its full fairness record shows up here — the commitment, your
+            Place a bet and its full fairness record shows up here - the commitment, your
             entropy, and a link to check the result independently.
           </p>
         </>

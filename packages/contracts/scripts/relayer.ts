@@ -62,7 +62,7 @@ async function main() {
     chain = epochChain(MASTER_SEED, ++epoch, CHAIN_LENGTH);
   }
   if (roundForHead(chain, startHead) === 0) {
-    throw new Error("Current commit is not on any of this relayer's chains — seed mismatch.");
+    throw new Error("Current commit is not on any of this relayer's chains - seed mismatch.");
   }
   console.log(
     `Relayer ready on ${network.name}. Game ${gameAddress}, epoch ${epoch}, next round ${roundForHead(chain, startHead)}.`,

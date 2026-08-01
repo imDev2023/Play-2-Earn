@@ -16,7 +16,7 @@ export const RUSH_ADDRESS = (process.env.NEXT_PUBLIC_RUSH_ADDRESS ??
 
 /**
  * Payout numerator/denominator and the tier multiplier label both come from the public
- * verifier, so the play UI and the `/verify` page can never quote different payouts —
+ * verifier, so the play UI and the `/verify` page can never quote different payouts -
  * they read the same table the fairness check does.
  */
 export { EDGE_NUM, EDGE_DEN, multiplierLabel } from "@rushood/verifier";
@@ -50,7 +50,7 @@ export const GAME_ABI = [
     outputs: [{ type: "uint256" }],
   },
   {
-    // Public getter for the `bets` mapping — the authoritative record for a bet, read
+    // Public getter for the `bets` mapping - the authoritative record for a bet, read
     // by the history so it never depends on catching the BetPlaced event. Since #24 it
     // also carries `commit` and `reveal`, so one call yields the complete set of
     // inputs a fairness check needs.
@@ -200,7 +200,7 @@ export const GAME_ABI = [
 
   // --- Guardian (emergency) and governance (policy) calls ---------------------------
   // The setters are here so the console can *encode* them for the timelock queue as
-  // well as call them directly pre-handoff — see lib/admin/ops.ts.
+  // well as call them directly pre-handoff - see lib/admin/ops.ts.
   {
     type: "function",
     name: "pause",

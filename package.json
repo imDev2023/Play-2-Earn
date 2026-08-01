@@ -2,7 +2,7 @@
   "name": "rushood",
   "private": true,
   "version": "0.0.0",
-  "description": "RUSHOOD — mainnet real-value number-prediction game DApp (monorepo)",
+  "description": "RUSHOOD - mainnet real-value number-prediction game DApp (monorepo)",
   "workspaces": [
     "packages/*"
   ],

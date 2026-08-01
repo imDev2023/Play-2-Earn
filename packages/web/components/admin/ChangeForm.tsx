@@ -19,7 +19,7 @@ import { field, hint, label, panel, primaryButton, textInput } from "../../lib/u
  * matters more here than on a normal form: a queued change spends the timelock delay
  * before the chain looks at it, so a value the game can never accept would otherwise
  * cost two days to discover. Constraints that are merely true *today* (the economics
- * lock, a bet in flight, the burn headroom) are shown as warnings instead — they are
+ * lock, a bet in flight, the burn headroom) are shown as warnings instead - they are
  * re-checked at execution, by which time they may well have changed.
  */
 
@@ -80,8 +80,8 @@ export function ChangeForm(props: ChangeFormProps) {
                 disabled={props.busy}
                 onChange={(e) => props.onChange(f.name, e.target.value)}
               >
-                <option value="true">true — unlocked</option>
-                <option value="false">false — locked</option>
+                <option value="true">true - unlocked</option>
+                <option value="false">false - locked</option>
               </select>
             ) : (
               <input
@@ -125,14 +125,14 @@ export function ChangeForm(props: ChangeFormProps) {
           : props.canQueue
             ? `Queue through the timelock · executable in ${formatDuration(props.minDelay ?? 0n)}`
             : props.canApplyDirectly
-              ? "Apply now — no timelock on this deployment"
+              ? "Apply now - no timelock on this deployment"
               : "Not authorised to change parameters"}
       </button>
 
       {props.canApplyDirectly && (
         <p data-testid="direct-mode-warning" style={{ ...hint, color: "var(--moon)" }}>
           Governance is still held by your key, so this change lands immediately with no public
-          delay. Hand governance to the timelock before real-value play — until then, players get
+          delay. Hand governance to the timelock before real-value play - until then, players get
           no warning of a parameter change.
         </p>
       )}

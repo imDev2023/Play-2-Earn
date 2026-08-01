@@ -26,7 +26,7 @@ For the web E2E tests, install the browser once: `npm run test:install --workspa
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck, build, contract tests, and web E2E on every push and PR.
 
-## Walking skeleton — play one bet locally (#18)
+## Walking skeleton - play one bet locally (#18)
 
 The thinnest complete path: connect a wallet, place one fixed-tier bet in RUSH, have it
 settled by the on-chain commit-reveal, and see win/loss. Run four processes:
@@ -38,7 +38,7 @@ npm run node --workspace @rushood/contracts            # hardhat node on :8545
 # 2. Deploy RUSH + Treasury + Game and fund the treasury/dev player
 npm run deploy:skeleton --workspace @rushood/contracts  # writes deployments/localhost.json
 
-# 3. Relayer stand-in — watches BetPlaced and reveals the next hash-chain node
+# 3. Relayer stand-in - watches BetPlaced and reveals the next hash-chain node
 npm run relayer --workspace @rushood/contracts
 
 # 4. Web app
@@ -56,20 +56,20 @@ only for `placeBet`; settlement is on the relayer. If the relayer goes dark, any
 unsettled past `SETTLE_TIMEOUT` (1 hour) can be reclaimed on-chain via `refund(betId)`.
 
 The single hardcoded tier, single-active-bet flow, and reproducible dev seed are skeleton
-simplifications — odds tiers, payout math, and governance over the relayer deepen in later tickets.
+simplifications - odds tiers, payout math, and governance over the relayer deepen in later tickets.
 
 ## Verifying a roll (#24)
 
 Every settled roll is recomputable by anyone from data the chain publishes. `BetPlaced`
 carries the commitment the bet was locked against, `BetSettled` carries the reveal and
-the roll, and `RushoodGame.bets(betId)` holds the whole set — no archive node, no
+the roll, and `RushoodGame.bets(betId)` holds the whole set - no archive node, no
 indexer, no trusting this app.
 
-- **In the app** — the fairness panel shows the commitment, your own entropy, and the
+- **In the app** - the fairness panel shows the commitment, your own entropy, and the
   reveal, and links to `/verify` with every input baked into the URL.
-- **In a browser** — `/verify` recomputes the draw locally. Nothing is sent anywhere; the
+- **In a browser** - `/verify` recomputes the draw locally. Nothing is sent anywhere; the
   page works with no wallet and no chain.
-- **On the command line** — the same links work verbatim:
+- **On the command line** - the same links work verbatim:
 
   ```bash
   npm run verify --workspace @rushood/verifier -- --url "<paste a verify link>"

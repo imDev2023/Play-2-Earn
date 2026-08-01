@@ -28,15 +28,15 @@ export function RelayerHealthPanel({ health }: { health: RelayerHealth }) {
         <Figure name="Pending" value={`${health.pendingSeconds}s`} />
         <Figure
           name="Refundable in"
-          value={health.status === "idle" ? "—" : `${health.refundableIn}s`}
+          value={health.status === "idle" ? "-" : `${health.refundableIn}s`}
         />
         <Figure
           name="Last settlement lag"
-          value={health.lastSettleLag !== undefined ? `${health.lastSettleLag}s` : "—"}
+          value={health.lastSettleLag !== undefined ? `${health.lastSettleLag}s` : "-"}
         />
       </div>
       <p style={hint}>
-        Measured on-chain, from the active bet&apos;s age against <code>SETTLE_TIMEOUT</code> — so
+        Measured on-chain, from the active bet&apos;s age against <code>SETTLE_TIMEOUT</code> - so
         this reports whether bets are actually being settled, not whether a process is running.
       </p>
     </section>

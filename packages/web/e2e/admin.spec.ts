@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * The admin console against no chain — which is exactly the state CI runs in, and a
+ * The admin console against no chain - which is exactly the state CI runs in, and a
  * state a real operator can hit (wrong network, dead RPC, contracts not deployed here).
  *
  * What matters at this seam is that the gate fails closed: nothing about the treasury,
@@ -13,7 +13,7 @@ import { test, expect } from "@playwright/test";
 test("the console explains itself before asking anyone to connect", async ({ page }) => {
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Treasury & operations" })).toBeVisible();
-  // The page states the governance model up front — the delay is the player's protection,
+  // The page states the governance model up front - the delay is the player's protection,
   // and the pause deliberately has none.
   await expect(page.getByText("queue through the governance timelock")).toBeVisible();
 });
@@ -30,7 +30,7 @@ test("an unconnected visitor is asked to sign in, and sees no treasury", async (
   await expect(page.getByTestId("change-form")).toHaveCount(0);
 });
 
-test("connecting a wallet is not itself authorisation — the roles come from chain", async ({
+test("connecting a wallet is not itself authorisation - the roles come from chain", async ({
   page,
 }) => {
   await page.goto("/admin");

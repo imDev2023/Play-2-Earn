@@ -43,7 +43,7 @@ describe("operatorAccess", () => {
   });
 
   it("reports 'unknown' until the roles have been read from chain", () => {
-    // A dead RPC must not read as "no timelock, govern directly" — that would invite
+    // A dead RPC must not read as "no timelock, govern directly" - that would invite
     // an operator to try a call the chain would reject.
     const access = operatorAccess({ account: SAFE });
     assert.equal(access.mode, "unknown");
@@ -65,10 +65,10 @@ describe("operatorAccess", () => {
     assert.deepEqual(access.roles, ["guardian", "proposer", "executor", "canceller"]);
     assert.equal(access.canQueue, true);
     assert.equal(access.canExecuteQueued, true);
-    // The way out of a mistake — OZ grants CANCELLER alongside PROPOSER.
+    // The way out of a mistake - OZ grants CANCELLER alongside PROPOSER.
     assert.equal(access.canCancel, true);
     assert.equal(access.canPause, true);
-    // Params never go direct once the timelock governs — the game would reject it.
+    // Params never go direct once the timelock governs - the game would reject it.
     assert.equal(access.canChangeParamsDirectly, false);
   });
 

@@ -5,7 +5,7 @@ import { defineConfig, devices } from "@playwright/test";
  * (Next dev server), so `npm test` is self-contained.
  *
  * The port is overridable because `reuseExistingServer` trusts whatever already
- * answers on it — if an unrelated process holds 3000, the whole suite silently runs
+ * answers on it - if an unrelated process holds 3000, the whole suite silently runs
  * against the wrong app. `PORT=3100 npm test` sidesteps that.
  */
 const port = Number(process.env.PORT ?? 3000);
@@ -13,7 +13,7 @@ const baseURL = `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
-  // The dev server compiles each route on first request, which can take ~30s cold —
+  // The dev server compiles each route on first request, which can take ~30s cold -
   // longer than a default-timeout test is willing to wait for the first hit on a
   // route the webServer health check didn't warm.
   timeout: 90_000,

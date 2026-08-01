@@ -11,7 +11,7 @@ const MIN_DELAY = 2n * 24n * 60n * 60n; // 2 days
 
 const ZERO = ethers.ZeroHash;
 
-describe("Governance — Safe multisig + Timelock + pause (#22)", () => {
+describe("Governance - Safe multisig + Timelock + pause (#22)", () => {
   // signers: deployer, player, relayer, safe (the multisig), outsider
   async function deploy() {
     const [deployer, player, relayer, safe, outsider] = await ethers.getSigners();
@@ -199,7 +199,7 @@ describe("Governance — Safe multisig + Timelock + pause (#22)", () => {
     });
   });
 
-  describe("economic invariants — immutable by default, governable when enabled", () => {
+  describe("economic invariants - immutable by default, governable when enabled", () => {
     it("effective economics default to the #20 constants", async () => {
       const { game } = await deploy();
       expect(await game.economicsGovernable()).to.equal(false);

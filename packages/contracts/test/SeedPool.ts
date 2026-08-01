@@ -11,8 +11,8 @@ import { allocations } from "../scripts/lib/genesis";
  *
  * What matters here is the plumbing around the pool, not the AMM maths: that the
  * liquidity allocation and the ETH both actually leave the deployer, that the price the
- * pool is initialized at is the one that was intended, and — the part holders care
- * about — that the position NFT is never held by an EOA on its way into the lock.
+ * pool is initialized at is the one that was intended, and - the part holders care
+ * about - that the position NFT is never held by an EOA on its way into the lock.
  */
 
 const RUSH_SEED = allocations().liquidity; // 250,000,000 RUSH

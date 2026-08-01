@@ -37,7 +37,7 @@ export type ParseResult =
 /**
  * The inverse of `parseVerifyInputs`: render inputs as URL query params.
  *
- * This is what makes a "one-click verify link" honest — the link carries every input,
+ * This is what makes a "one-click verify link" honest - the link carries every input,
  * so whoever opens it verifies from the link itself rather than from a lookup they'd
  * have to trust. Because both directions live here, a link built by the app is
  * guaranteed to parse in the app, in the CLI, and anywhere else this module runs.
@@ -59,7 +59,7 @@ const BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 
 /**
  * Parse raw text into `VerifyInputs`, collecting *every* problem rather than
- * stopping at the first — a player pasting a record wants all of it flagged at once.
+ * stopping at the first - a player pasting a record wants all of it flagged at once.
  */
 export function parseVerifyInputs(raw: RawVerifyInputs): ParseResult {
   const errors: FieldError[] = [];
@@ -142,7 +142,7 @@ function parseTier(value: string | null | undefined, errors: FieldError[]): numb
   if (!Number.isInteger(parsed) || parsed < 0 || parsed >= TIER_ODDS.length) {
     errors.push({
       field: "tier",
-      message: `tier must be 0–${TIER_ODDS.length - 1} (the published odds ladder)`,
+      message: `tier must be 0-${TIER_ODDS.length - 1} (the published odds ladder)`,
     });
     return undefined;
   }

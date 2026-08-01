@@ -5,12 +5,12 @@ import type { BaseContract } from "ethers";
 
 /**
  * LP lock (#26): the Uniswap v3 position seeded with the 25% liquidity allocation is
- * custodied here and cannot be moved for 2 years — the "team can't pull liquidity and
+ * custodied here and cannot be moved for 2 years - the "team can't pull liquidity and
  * rug the token" guarantee from the spec.
  *
  * The property that actually matters to a holder is negative: while the lock is live
- * there must be *no* path — not withdrawal, not an approval, not a liquidity
- * decrease — by which the position or its liquidity leaves this contract. Fee
+ * there must be *no* path - not withdrawal, not an approval, not a liquidity
+ * decrease - by which the position or its liquidity leaves this contract. Fee
  * collection is the single carve-out, because sweeping fees does not touch liquidity.
  *
  * Driven entirely through the lock's public interface plus the observable owner of the
@@ -30,7 +30,7 @@ function functionNames(contract: BaseContract): string[] {
   return names;
 }
 
-describe("RushoodLPLock — Uniswap position lock (#26)", () => {
+describe("RushoodLPLock - Uniswap position lock (#26)", () => {
   async function deploy() {
     const [deployer, timelock, treasury, outsider] = await ethers.getSigners();
 
@@ -185,7 +185,7 @@ describe("RushoodLPLock — Uniswap position lock (#26)", () => {
       expect(await weth.balanceOf(treasury.address)).to.equal(FEES_1);
     });
 
-    it("is permissionless — anyone may trigger it, only the recipient is paid", async () => {
+    it("is permissionless - anyone may trigger it, only the recipient is paid", async () => {
       const ctx = await deploy();
       await accrueFees(ctx);
       const { lock, rush, outsider, treasury } = ctx;

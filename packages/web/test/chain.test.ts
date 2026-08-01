@@ -11,7 +11,7 @@ import { before, describe, it } from "node:test";
  *
  * lib/chain reads process.env once, at module load, so the environment is cleared
  * *before* it is imported. Without that these assertions would pass or fail depending
- * on whoever's shell was running them — and the whole point is to prove the defaults
+ * on whoever's shell was running them - and the whole point is to prove the defaults
  * are safe, which an inherited NEXT_PUBLIC_ROBINHOOD_RPC_URL would mask.
  */
 

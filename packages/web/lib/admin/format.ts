@@ -3,8 +3,8 @@ import { formatUnits, parseUnits } from "viem";
 /**
  * Formatting and parsing for the console's units.
  *
- * Everything the operator reads or types arrives in a machine unit — seconds, wei,
- * basis points — and each is the wrong unit for the decision being made with it. These
+ * Everything the operator reads or types arrives in a machine unit - seconds, wei,
+ * basis points - and each is the wrong unit for the decision being made with it. These
  * are the single conversion point, so the form, the treasury readout and the queue all
  * quote a value the same way.
  */
@@ -44,7 +44,7 @@ export function formatDuration(seconds: bigint): string {
 
 /** An address abbreviated for a table, keeping both ends so it stays checkable. */
 export function shortAddress(address?: string): string {
-  if (!address) return "—";
+  if (!address) return "-";
   if (address.length <= 12) return address;
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
@@ -69,6 +69,6 @@ export function percentLabel(bps: bigint): string {
  * Computed in integer arithmetic so the label never renders as 4.999999999999996%.
  */
 export function edgePercentLabel(num: bigint, den: bigint): string {
-  if (den === 0n) return "—";
+  if (den === 0n) return "-";
   return `${Number(((den - num) * BPS_DEN) / den) / 100}%`;
 }

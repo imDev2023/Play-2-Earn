@@ -7,7 +7,7 @@ import { buildSeedParams, type SeedParams } from "./uniswap-price";
  *
  * The position is minted with the lock as its recipient rather than minted to the
  * deployer and transferred afterwards. That removes the window in which a launch
- * position sits unlocked in an EOA — a window that, on mainnet, is exactly when
+ * position sits unlocked in an EOA - a window that, on mainnet, is exactly when
  * everyone is watching.
  *
  * ETH is wrapped to WETH first and the pool is seeded as a plain two-ERC20 mint. The
@@ -86,7 +86,7 @@ export interface SeedPoolRequest {
   readonly positionManager: PositionManager;
   readonly rush: ApprovableToken;
   readonly weth: WrappedEth;
-  /** Where the position NFT is minted — the LP lock. */
+  /** Where the position NFT is minted - the LP lock. */
   readonly recipient: string;
   readonly rushAmount: bigint;
   readonly ethAmount: bigint;
@@ -107,7 +107,7 @@ export interface SeedPoolResult {
 const DEFAULT_DEADLINE_SECONDS = 30n * 60n;
 
 /**
- * Wrap, approve, initialize and mint — returning the locked position's id.
+ * Wrap, approve, initialize and mint - returning the locked position's id.
  *
  * `amount0Min`/`amount1Min` are left at zero deliberately: this is the pool's first
  * and only mint, so there is no existing price for slippage to move against. Any
@@ -171,9 +171,9 @@ function extractTokenId(logs: readonly Log[]): bigint {
       });
       if (parsed?.name === "IncreaseLiquidity") return parsed.args.tokenId as bigint;
     } catch {
-      // Not one of ours — the receipt also carries ERC20 Transfers and the pool's own logs.
+      // Not one of ours - the receipt also carries ERC20 Transfers and the pool's own logs.
       continue;
     }
   }
-  throw new Error("Pool seeded but no IncreaseLiquidity event found — cannot identify the position");
+  throw new Error("Pool seeded but no IncreaseLiquidity event found - cannot identify the position");
 }

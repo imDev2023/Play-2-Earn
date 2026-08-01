@@ -11,7 +11,7 @@ export default function Home() {
         </h1>
         <p data-testid="tagline" style={tagline}>
           Pick your odds.{" "}
-          <span style={{ color: "var(--muted)" }}>Instant, provably-fair draws — up to</span>{" "}
+          <span style={{ color: "var(--muted)" }}>Instant, provably-fair draws - up to</span>{" "}
           <span className="mono" style={{ color: "var(--moon)", fontWeight: 800 }}>
             950×
           </span>

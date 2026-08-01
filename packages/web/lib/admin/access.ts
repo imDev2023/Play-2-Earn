@@ -13,7 +13,7 @@ import type { Address } from "viem";
  * The account this compares against is whatever the wallet presents. Connected through
  * Safe{Wallet}'s WalletConnect that IS the Safe, so a signature here becomes a Safe
  * proposal for the other owners to co-sign, and the roles below match. A Safe *owner*
- * connecting their personal key holds none of these roles and is correctly refused —
+ * connecting their personal key holds none of these roles and is correctly refused -
  * proposing on the Safe's behalf from an owner key would need the Safe Transaction
  * Service, which is a separate integration and not part of #25.
  */
@@ -23,21 +23,21 @@ export type AdminRole = "governance" | "guardian" | "proposer" | "executor" | "c
 /**
  * How parameter changes reach the game.
  *
- * - `timelock` — governance is a TimelockController: changes are queued and wait out
+ * - `timelock` - governance is a TimelockController: changes are queued and wait out
  *   its delay. The production shape.
- * - `direct` — governance is the connected account: changes land immediately. The
+ * - `direct` - governance is the connected account: changes land immediately. The
  *   pre-handoff shape; the console says so loudly.
- * - `foreign` — governance is some other account entirely. Nothing to do here.
- * - `unknown` — the roles have not been read yet (or the node is unreachable).
+ * - `foreign` - governance is some other account entirely. Nothing to do here.
+ * - `unknown` - the roles have not been read yet (or the node is unreachable).
  */
 export type GovernanceMode = "timelock" | "direct" | "foreign" | "unknown";
 
 export interface AccessInputs {
   /** The connected wallet, if any. */
   account?: Address;
-  /** `RushoodGame.governance()` — the policy role. */
+  /** `RushoodGame.governance()` - the policy role. */
   governance?: Address;
-  /** `RushoodGame.guardian()` — the emergency pause role. */
+  /** `RushoodGame.guardian()` - the emergency pause role. */
   guardian?: Address;
   /**
    * The governance holder, once confirmed to be a TimelockController (the console
@@ -73,7 +73,7 @@ export interface OperatorAccess {
   canPause: boolean;
 }
 
-/** Case-insensitive address comparison — chains and wallets disagree about casing. */
+/** Case-insensitive address comparison - chains and wallets disagree about casing. */
 function sameAddress(a?: string, b?: string): boolean {
   return Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 }

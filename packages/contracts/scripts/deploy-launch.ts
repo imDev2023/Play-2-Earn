@@ -15,7 +15,7 @@ import { DEFAULT_FEE_TIER } from "./lib/uniswap-price";
  *
  * Unlike deploy-skeleton.ts (a dev-convenience stack), this is the sequence that runs
  * at launch, and it runs once. Everything it decides is either pinned as a constant
- * here or read from the environment — nothing is derived from whatever happens to be
+ * here or read from the environment - nothing is derived from whatever happens to be
  * lying around in the local node.
  *
  * Writes deployments/<network>.json for the relayer, the frontend, and the published
@@ -31,7 +31,7 @@ import { DEFAULT_FEE_TIER } from "./lib/uniswap-price";
  * an exact integer. Both tokens have 18 decimals, so this ratio applies directly to
  * their wei amounts.
  *
- * The ETH side is the only knob (LP_ETH_AMOUNT) — the RUSH side is derived from it, so
+ * The ETH side is the only knob (LP_ETH_AMOUNT) - the RUSH side is derived from it, so
  * seeding a smaller pool scales both sides together and opens at the same price rather
  * than a cheaper one. That is what makes a scaled-down testnet pool a faithful
  * rehearsal of the mainnet one.
@@ -40,7 +40,7 @@ const RUSH_PER_ETH = 10_000_000n;
 
 /** Full mainnet seed: 25 ETH against the 250,000,000 RUSH liquidity allocation. */
 const DEFAULT_LP_ETH_MAINNET = 25n * 10n ** 18n;
-/** Testnet rehearsal seed — same price, a fraction of the capital. */
+/** Testnet rehearsal seed - same price, a fraction of the capital. */
 const DEFAULT_LP_ETH_TESTNET = 5n * 10n ** 16n; // 0.05 ETH
 
 const TIMELOCK_MIN_DELAY = BigInt(process.env.TIMELOCK_MIN_DELAY ?? 2 * 24 * 60 * 60);
@@ -56,12 +56,12 @@ function requireEnv(name: string): string {
 }
 
 /**
- * The relayer's master seed — the crown-jewel secret.
+ * The relayer's master seed - the crown-jewel secret.
  *
  * On a public network this MUST come from the environment. `DEFAULT_MASTER_SEED` is
  * the committed dev seed ("rushood-dev-seed"), and the whole reveal chain is derived
  * from it deterministically. Falling back to it on a real chain would publish a genesis
- * commitment anyone could reproduce, making every future roll predictable in advance —
+ * commitment anyone could reproduce, making every future roll predictable in advance -
  * the exact failure the commit-reveal scheme exists to prevent. Spec §8: "treat s₀ as
  * the crown-jewel secret".
  *
@@ -74,7 +74,7 @@ function resolveMasterSeed(isLocal: boolean): string {
   if (seed === DEFAULT_MASTER_SEED) {
     throw new Error(
       "RELAYER_SEED is set to the public dev seed. Every roll derived from it is " +
-        "predictable — generate a secret seed for this deployment.",
+        "predictable - generate a secret seed for this deployment.",
     );
   }
   return seed;
@@ -88,7 +88,7 @@ async function main() {
   const masterSeed = resolveMasterSeed(isLocal);
 
   // On a real network every role must be named explicitly. Locally we fall back to dev
-  // signers so the dry run is a single command — but an explicit env var still wins, so
+  // signers so the dry run is a single command - but an explicit env var still wins, so
   // a local stack can be wired to whichever account the browser wallet will connect as.
   const safe =
     process.env.GOVERNANCE_SAFE ??
@@ -106,7 +106,7 @@ async function main() {
   const liquidityBudget = allocations().liquidity;
   if (lpRushAmount > liquidityBudget) {
     throw new Error(
-      `Seeding ${lpRushAmount} RUSH exceeds the ${liquidityBudget} liquidity allocation — ` +
+      `Seeding ${lpRushAmount} RUSH exceeds the ${liquidityBudget} liquidity allocation - ` +
         `lower LP_ETH_AMOUNT (max ${liquidityBudget / RUSH_PER_ETH} wei of ETH at the pinned price)`,
     );
   }
@@ -158,7 +158,7 @@ async function main() {
   // Fees go to the Safe, NOT the Treasury. Treasury only ever moves its immutable RUSH
   // token and has no rescue path, so the WETH side of the LP fees would be stuck there
   // forever. Routing LP fee income into the house bankroll would also be an economics
-  // change the spec doesn't describe — the Safe can hold both sides and decide.
+  // change the spec doesn't describe - the Safe can hold both sides and decide.
   const lpLock = await (
     await ethers.getContractFactory("RushoodLPLock")
   ).deploy(positionManagerAddress, safe, await timelock.getAddress());
@@ -181,8 +181,8 @@ async function main() {
   }
 
   // Verify the split landed *here*, at the one moment the balances are still exactly
-  // the allocation. After this the game starts moving RUSH — stakes into the treasury,
-  // burns out of the supply — so this is the last point at which exact equality is the
+  // the allocation. After this the game starts moving RUSH - stakes into the treasury,
+  // burns out of the supply - so this is the last point at which exact equality is the
   // right assertion rather than an invariant.
   // Buckets are aggregated by address first: community and staking share the Safe, so
   // checking each bucket against that address's balance in isolation would fail on a
@@ -234,7 +234,7 @@ async function main() {
     await (await rush.transfer(safe, unseeded)).wait();
     console.log(
       `\n!! ${ethers.formatUnits(unseeded, 18)} RUSH of the liquidity allocation was NOT seeded.\n` +
-        `   It now sits with the Safe (${safe}) and is OUTSIDE the LP lock — a visible\n` +
+        `   It now sits with the Safe (${safe}) and is OUTSIDE the LP lock - a visible\n` +
         `   overhang. Seed it later or move it somewhere holders can see it committed.`,
     );
   }
@@ -299,7 +299,7 @@ async function main() {
 
   if (usingMocks) {
     console.log(
-      "\n!! Uniswap was MOCKED for this run. This is a rehearsal, not a real pool —\n" +
+      "\n!! Uniswap was MOCKED for this run. This is a rehearsal, not a real pool -\n" +
         "   set UNISWAP_POSITION_MANAGER and WETH_ADDRESS to seed real liquidity.",
     );
   }
@@ -308,7 +308,7 @@ async function main() {
 /**
  * Find the Uniswap position manager and WETH to seed against.
  *
- * On a real network both must be given explicitly — guessing an address here would
+ * On a real network both must be given explicitly - guessing an address here would
  * mean seeding the launch liquidity into whatever contract happened to answer. Locally,
  * mocks are deployed so the whole sequence can be rehearsed in one command.
  */

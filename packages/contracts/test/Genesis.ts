@@ -63,7 +63,7 @@ describe("Genesis allocation (#26)", () => {
   describe("distribution on-chain", () => {
     /**
      * Every bucket gets a distinct destination so each balance assertion is
-     * unambiguous — treasury and team go to the real contracts that will hold them in
+     * unambiguous - treasury and team go to the real contracts that will hold them in
      * production, the rest to separate signers standing in for the Safe.
      */
     async function deployStack() {

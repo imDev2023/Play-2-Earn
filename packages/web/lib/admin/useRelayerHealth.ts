@@ -34,7 +34,7 @@ export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): 
   });
 
   // How long the last settlement actually took. Recomputed whenever the active bet
-  // changes — every settlement moves `activeBetId` back to zero, so that is exactly
+  // changes - every settlement moves `activeBetId` back to zero, so that is exactly
   // the edge worth reacting to, and it avoids re-scanning logs on a timer.
   useEffect(() => {
     let cancelled = false;

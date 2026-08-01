@@ -9,8 +9,8 @@ import { robinhoodChain, robinhoodTestnet } from "./chain";
  * selects which one the app expects a wallet to be on.
  *
  * Connectors:
- *   - `injected` — a real browser wallet (MetaMask, etc.), used on any chain.
- *   - `mock` — a Hardhat dev account (#1, unlocked on the node), so the local play
+ *   - `injected` - a real browser wallet (MetaMask, etc.), used on any chain.
+ *   - `mock` - a Hardhat dev account (#1, unlocked on the node), so the local play
  *     flow works without a browser wallet and stays testable end-to-end.
  */
 const DEV_ACCOUNT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"; // Hardhat account #1

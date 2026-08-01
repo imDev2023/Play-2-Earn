@@ -32,7 +32,7 @@ export const label: CSSProperties = {
 };
 
 /**
- * A small uppercase status pill — paused/live, a relayer's state, a queued operation's
+ * A small uppercase status pill - paused/live, a relayer's state, a queued operation's
  * state. Callers supply the tone: `{ ...statusBadge, color: X, borderColor: X }`.
  */
 export const statusBadge: CSSProperties = {
@@ -90,7 +90,7 @@ export const hint: CSSProperties = {
   lineHeight: 1.55,
 };
 
-/** A full hash shown for inspection — wraps rather than overflows. */
+/** A full hash shown for inspection - wraps rather than overflows. */
 export const hexValue: CSSProperties = {
   fontSize: "0.8rem",
   color: "var(--cool)",

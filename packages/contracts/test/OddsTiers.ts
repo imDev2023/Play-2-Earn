@@ -102,7 +102,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
     it("property: for ARBITRARY stakes the edge is never below 5% (house never overpays)", async () => {
       const { game } = await deploy();
       // For stakes not divisible by EDGE_DEN the payout floors, nudging the edge
-      // slightly *above* 5% — so expected return is always <= 0.95 * stake, never more.
+      // slightly *above* 5% - so expected return is always <= 0.95 * stake, never more.
       // Fuzz jagged, indivisible stakes across a wide magnitude range.
       const stakes = Array.from({ length: 50 }, (_, i) => {
         const base = (BigInt(i) + 1n) ** 3n * 7919n + 3n; // never a clean multiple of 100
@@ -226,7 +226,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
       await expect(game.connect(relayer).settleBet(chain[1])).to.emit(game, "BetSettled");
     });
 
-    it("a placed bet is always payable — no underfunded-treasury brick", async () => {
+    it("a placed bet is always payable - no underfunded-treasury brick", async () => {
       // Place the largest allowed moonshot bet; the treasury must still cover the
       // 950x payout at settle time (the cap is what guarantees this).
       const { rush, treasury, game, player, relayer, chain } = await deploy();
@@ -243,7 +243,7 @@ describe("Odds tiers + payout math + solvency caps (#20)", () => {
     it("shrinks the safe cap as the pool depletes (each win keeps within maxPayout)", async () => {
       // The 1% cap deliberately makes the pool hard to drain: each max win removes
       // well under 1% net. So rather than grind to the floor, assert the depletion
-      // dynamics — the cap tracks the shrinking balance and every win stays capped.
+      // dynamics - the cap tracks the shrinking balance and every win stays capped.
       const { game, player, relayer, chain } = await deploy(TREASURY_FLOOR + 5_000n * 10n ** 18n);
       let prevCap = await game.maxBet(0);
       for (let round = 1; round <= 4; round++) {

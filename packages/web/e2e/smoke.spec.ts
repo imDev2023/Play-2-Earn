@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 // A live chain isn't available in CI, so these assert the disconnected experience
-// and the on-chain wiring — the full connect → buy → bet → reveal → history flow is
+// and the on-chain wiring - the full connect → buy → bet → reveal → history flow is
 // exercised live against a local node (agent-browser), not here.
 
 test("hero states the pitch: pick your odds, up to 950x", async ({ page }) => {

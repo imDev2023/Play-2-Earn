@@ -2,7 +2,7 @@
  * One entry of a `useReadContracts` result.
  *
  * The console reads its state with `allowFailure` (the default), because a failed call
- * is often the answer it wants — "this address is not a timelock" is discovered by
+ * is often the answer it wants - "this address is not a timelock" is discovered by
  * asking it for a min delay and being refused. That makes unwrapping an entry the same
  * gesture everywhere: a value, or nothing, never a thrown query.
  */

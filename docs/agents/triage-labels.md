@@ -14,4 +14,4 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 Edit the right-hand column to match whatever vocabulary you actually use.
 
-> Note: only `wontfix` currently exists in the repo (a GitHub default). The other four are created on first use — `gh issue edit <n> --add-label "needs-triage"` will error if the label doesn't exist yet, so create it once with `gh label create needs-triage` (and the others) before the first triage run, or let whoever runs `/triage` create them.
+> Note: only `wontfix` currently exists in the repo (a GitHub default). The other four are created on first use - `gh issue edit <n> --add-label "needs-triage"` will error if the label doesn't exist yet, so create it once with `gh label create needs-triage` (and the others) before the first triage run, or let whoever runs `/triage` create them.

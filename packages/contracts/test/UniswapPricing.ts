@@ -14,7 +14,7 @@ import {
 /**
  * Uniswap seeding maths (#26).
  *
- * The launch pool is seeded once, with 250,000,000 RUSH against 25 ETH — a price of
+ * The launch pool is seeded once, with 250,000,000 RUSH against 25 ETH - a price of
  * 1e-7 ETH per RUSH. If the price is encoded inverted, or the token ordering is wrong,
  * the pool opens at ~1e14× the intended rate and the first swap empties it. There is no
  * second attempt and no way to unwind it, so the arithmetic is pinned down here.
@@ -35,7 +35,7 @@ function decodePriceScaled(sqrtPriceX96: bigint): bigint {
 
 /**
  * sqrtPriceX96 is an integer, so encoding a price floors it and squaring propagates
- * that truncation — a round-trip lands within a hair of the input rather than exactly
+ * that truncation - a round-trip lands within a hair of the input rather than exactly
  * on it. What matters is that the error is negligible, so assert the bound (1 part in
  * 1e9) instead of pretending the arithmetic is exact. At the launch price that is a
  * deviation of well under a wei of ETH per RUSH.
@@ -179,7 +179,7 @@ describe("Uniswap seeding maths (#26)", () => {
 
     it("encodes a price consistent with whichever ordering it produced", () => {
       // The pool price is always token1-per-token0. Whichever way the addresses sort,
-      // the encoded price must describe the amounts actually being deposited — this is
+      // the encoded price must describe the amounts actually being deposited - this is
       // the assertion that would fail if ordering and amounts ever came apart.
       for (const [tokenA, tokenB] of [
         [LOW_ADDRESS, HIGH_ADDRESS],

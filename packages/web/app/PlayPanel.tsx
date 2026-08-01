@@ -60,7 +60,7 @@ export function PlayPanel() {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tier, setTier] = useState(0);
-  // The tier of the bet currently settling — captured at placement so the reveal
+  // The tier of the bet currently settling - captured at placement so the reveal
   // describes the settled bet, not whatever the ladder is showing now.
   const [betTier, setBetTier] = useState(0);
   const [stakeInput, setStakeInput] = useState("100");

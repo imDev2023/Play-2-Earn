@@ -58,7 +58,7 @@ export async function settleNextBet(
   const head = await game.currentCommit();
   const round = roundForHead(chain, head);
   if (round === 0) {
-    throw new Error("chain head is off this relayer's chain — seed mismatch");
+    throw new Error("chain head is off this relayer's chain - seed mismatch");
   }
   if (round >= chain.length) {
     return { settled: false, needsRotation: true };

@@ -3,7 +3,7 @@ import { GAME_ABI } from "../contracts";
 import { edgePercentLabel, formatRush, parseRush, percentLabel } from "./format";
 
 /**
- * The admin operations catalogue — every sensitive change the console can make, what
+ * The admin operations catalogue - every sensitive change the console can make, what
  * the game will accept, and how a change becomes calldata.
  *
  * Validation deliberately mirrors the contract's own guards. A queued change waits out
@@ -13,22 +13,22 @@ import { edgePercentLabel, formatRush, parseRush, percentLabel } from "./format"
  *
  * The three kinds of constraint are kept apart on purpose:
  *
- *   - **Shape and bounds** (`parseAdminOp`) — what the contract rejects unconditionally
+ *   - **Shape and bounds** (`parseAdminOp`) - what the contract rejects unconditionally
  *     (`InvalidEconomics`, `BurnRateTooHigh`). These block, because no amount of waiting
  *     makes them valid.
- *   - **Current state** (`preflightAdminOp`) — what the contract rejects *right now*
+ *   - **Current state** (`preflightAdminOp`) - what the contract rejects *right now*
  *     (`EconomicsLocked`, `EconomicUpdateWhileBetActive`, `BurnBelowFloor`). These only
  *     warn: an operation is executed days after it is queued, by which time the economy
  *     may have been unlocked, the bet settled and the treasury grown.
- *   - **Authority** (lib/admin/access.ts) — who is allowed to ask at all.
+ *   - **Authority** (lib/admin/access.ts) - who is allowed to ask at all.
  *
- * Everything that varies per operation — its fields, its bounds, how it reads back in
- * plain language — lives on its entry in `ADMIN_OPS`, so adding an operation is one
+ * Everything that varies per operation - its fields, its bounds, how it reads back in
+ * plain language - lives on its entry in `ADMIN_OPS`, so adding an operation is one
  * edit in one table rather than a new arm in three switches.
  *
  * `setGovernance` and `setGuardian` are deliberately absent. They are governance calls
- * like the rest, but a role handed to a mistyped address is unrecoverable — there is no
- * second key left to correct it — and #25 asks for a parameter console, not a key
+ * like the rest, but a role handed to a mistyped address is unrecoverable - there is no
+ * second key left to correct it - and #25 asks for a parameter console, not a key
  * ceremony. Rotating a role stays a deliberate, scripted operation.
  */
 
@@ -42,7 +42,7 @@ export type AdminOpId =
   | "burnTreasuryProfit";
 
 /**
- * `RushoodGame.MAX_BURN_RATE_BPS` — the ceiling governance may set the burn rate to.
+ * `RushoodGame.MAX_BURN_RATE_BPS` - the ceiling governance may set the burn rate to.
  * A mirror of the on-chain constant, used as the default bound; the console reads the
  * live value and passes it to `parseAdminOp` so a redeployed ceiling wins over this.
  */
@@ -53,9 +53,9 @@ export interface AdminOpField {
   name: string;
   label: string;
   /**
-   * `integer` — a whole number in the contract's own units (bps, a denominator).
-   * `rush` — a decimal token amount, converted to wei.
-   * `boolean` — a flag.
+   * `integer` - a whole number in the contract's own units (bps, a denominator).
+   * `rush` - a decimal token amount, converted to wei.
+   * `boolean` - a flag.
    */
   kind: "integer" | "rush" | "boolean";
   /** Inclusive lower bound, in the field's on-chain units. */
@@ -152,7 +152,7 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
     id: "setEconomicsGovernable",
     label: "Economic setters lock",
     summary:
-      "The opt-in switch for a governable economy. While off, edge / cap / min-bet / floor are immutable — even for governance.",
+      "The opt-in switch for a governable economy. While off, edge / cap / min-bet / floor are immutable - even for governance.",
     fields: [
       {
         name: "enabled",
@@ -171,7 +171,7 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
   {
     id: "setMinBet",
     label: "Minimum bet",
-    summary: "The smallest stake the game accepts. Tracks a ~$0.25–0.50 floor in RUSH.",
+    summary: "The smallest stake the game accepts. Tracks a ~$0.25-0.50 floor in RUSH.",
     fields: [
       {
         name: "newMinBet",
@@ -208,13 +208,13 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
       return [
         {
           field: "num",
-          message: `The numerator must not exceed the denominator — ${num}/${den} would pay out more than the odds, which is a negative house edge`,
+          message: `The numerator must not exceed the denominator - ${num}/${den} would pay out more than the odds, which is a negative house edge`,
         },
       ];
     },
     describe: (args) => {
       const [num, den] = args as [bigint, bigint];
-      return `payout ${num}/${den} × odds — a ${edgePercentLabel(num, den)} house edge`;
+      return `payout ${num}/${den} × odds - a ${edgePercentLabel(num, den)} house edge`;
     },
   },
   {
@@ -256,7 +256,7 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
     id: "burnTreasuryProfit",
     label: "Burn treasury profit",
     summary:
-      "Permanently destroy RUSH held above the floor — the deflation policy, executed by hand.",
+      "Permanently destroy RUSH held above the floor - the deflation policy, executed by hand.",
     fields: [
       {
         name: "amount",
@@ -300,7 +300,7 @@ const DECIMAL_AMOUNT = /^\d+(\.\d{1,18})?$/;
 
 /**
  * Parse a form's raw strings into contract arguments, collecting every problem rather
- * than stopping at the first — an operator fixing a form wants all of it flagged at once.
+ * than stopping at the first - an operator fixing a form wants all of it flagged at once.
  */
 export function parseAdminOp(
   id: AdminOpId,
@@ -374,7 +374,7 @@ function withinBound(
       field: field.name,
       message:
         field.kind === "rush"
-          ? `${field.label} must be greater than zero — the game rejects it otherwise`
+          ? `${field.label} must be greater than zero - the game rejects it otherwise`
           : `${field.label} must be at least ${field.min}`,
     });
     return undefined;
@@ -404,7 +404,7 @@ export interface AdminCallDescription {
  * Read calldata back into plain language.
  *
  * The pending queue is rebuilt from the timelock's `CallScheduled` logs, so what an
- * operator is asked to approve has to be recovered from the calldata itself — not
+ * operator is asked to approve has to be recovered from the calldata itself - not
  * remembered from the form that produced it, which may have been a different browser,
  * a different operator, or two days ago.
  *
@@ -443,7 +443,7 @@ export function preflightAdminOp(
     warnings.push({
       code: "economics-locked",
       message:
-        "The economic setters are locked. This reverts unless setEconomicsGovernable(true) has executed first — queue that change alongside this one.",
+        "The economic setters are locked. This reverts unless setEconomicsGovernable(true) has executed first - queue that change alongside this one.",
     });
   }
 

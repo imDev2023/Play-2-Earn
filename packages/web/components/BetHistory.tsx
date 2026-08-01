@@ -43,7 +43,7 @@ export function BetHistory({ history }: { history: BetEntry[] }) {
   );
 }
 
-/** Per-row escape hatch into the public verifier — every past roll is checkable, not
+/** Per-row escape hatch into the public verifier - every past roll is checkable, not
  *  just the latest one shown in the fairness panel. */
 function Verify({ bet }: { bet: BetEntry }) {
   const inputs = verifyInputsFor(bet);

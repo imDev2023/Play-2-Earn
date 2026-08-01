@@ -245,7 +245,7 @@ export function useBetHistory(address: Address | undefined) {
   return { history };
 }
 
-/** Treat the zero word as "absent" — an unconsumed reveal slot reads as 0x00…0. */
+/** Treat the zero word as "absent" - an unconsumed reveal slot reads as 0x00…0. */
 function nonZero(value: Hex): Hex | undefined {
   return /^0x0*$/.test(value) ? undefined : value;
 }

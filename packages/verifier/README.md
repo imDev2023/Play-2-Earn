@@ -3,7 +3,7 @@
 The public fairness verifier for [RUSHOOD](../../README.md). Recompute any roll from
 its public inputs and check it against the commitment the house made *before* the bet.
 
-It talks to nothing. No network, no wallet, no state — give it the numbers the chain
+It talks to nothing. No network, no wallet, no state - give it the numbers the chain
 published and it re-runs the draw locally. That's the point: you shouldn't have to
 trust rushood's website (or its RPC, or its relayer) to believe a result.
 
@@ -18,8 +18,8 @@ roll       == R mod N                                        // N = the tier's o
 win        == roll == 0                                      // a 1-in-N shot
 ```
 
-Neither side can grind the result. The server's reveal is fixed before your bet exists
-— only its hash, the standing commitment, is public. Your entropy is fixed at bet time,
+Neither side can grind the result. The server's reveal is fixed before your bet exists -
+only its hash, the standing commitment, is public. Your entropy is fixed at bet time,
 before the reveal becomes public. Mixing `betId` in domain-separates bets, so an
 outcome can't be replayed onto a different one.
 
@@ -44,7 +44,7 @@ npm run verify --workspace @rushood/verifier -- \
   --serverReveal 0x… --commitment 0x…
 ```
 
-Or paste a share link straight off the in-app fairness panel — the `/verify` page and
+Or paste a share link straight off the in-app fairness panel - the `/verify` page and
 this CLI accept exactly the same parameters:
 
 ```bash
@@ -73,12 +73,12 @@ verdict.computed.roll;   // the draw, recomputed
 verdict.failures;        // ["commitment-mismatch"], ["roll-mismatch"], …
 ```
 
-`verifyRoll` never throws on bad input — an unknown tier is reported as a failure like
+`verifyRoll` never throws on bad input - an unknown tier is reported as a failure like
 any other, so a UI can render one verdict shape for every outcome.
 
 ## Why you can trust this matches the chain
 
-The formula lives twice: here, and in `RushoodGame.outcomeOf` — a `public pure`
+The formula lives twice: here, and in `RushoodGame.outcomeOf` - a `public pure`
 function `settleBet` itself calls, so the game settles on the same number a skeptic
 recomputes. The contract test suite
 ([`test/Fairness.ts`](../contracts/test/Fairness.ts)) pins the two together: it drives

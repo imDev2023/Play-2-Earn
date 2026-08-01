@@ -15,7 +15,7 @@ const STAKE = 100n * 10n ** 18n;
 
 /**
  * Smallest clientSeed producing the desired outcome for a bet, via the public
- * verifier — the tests and the game share one formula (#24). `betId` matters: it is
+ * verifier - the tests and the game share one formula (#24). `betId` matters: it is
  * mixed into the draw, so the seed that wins bet 1 is not the seed that wins bet 2.
  */
 function seedForOutcome(
@@ -31,7 +31,7 @@ function burnOf(stake: bigint, bps = DEFAULT_BURN_RATE_BPS): bigint {
   return (stake * bps) / BPS_DEN;
 }
 
-describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
+describe("Deflation - per-play burn + treasury profit-burn (#21)", () => {
   async function deploy(chainLength = 32) {
     const [deployer, player, relayer, outsider] = await ethers.getSigners();
     const chain = buildHashChain("deflation-test", chainLength);
@@ -181,9 +181,9 @@ describe("Deflation — per-play burn + treasury profit-burn (#21)", () => {
       }
     });
 
-    it("totalSupply never increases — even across a zero-rate play and a refund", async () => {
+    it("totalSupply never increases - even across a zero-rate play and a refund", async () => {
       // The hard invariant is monotone NON-increasing (RUSH has no mint path). Interleave
-      // the flat-step cases — a 0% burn play and a refund — and confirm no step ever rises,
+      // the flat-step cases - a 0% burn play and a refund - and confirm no step ever rises,
       // while the whole sequence still nets a decrease overall.
       const { rush, treasury, game, deployer, player, relayer, chain } = await deploy();
       const start = (await rush.totalSupply()) as bigint;
