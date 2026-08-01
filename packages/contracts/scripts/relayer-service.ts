@@ -7,7 +7,7 @@ import {
   HealthchecksSink,
   SilentHeartbeat,
 } from "./service/alerts";
-import { describeConfig, loadRelayerConfig } from "./service/config";
+import { describeConfig, loadRelayerConfig, withCredentialSeed } from "./service/config";
 import { connectGame } from "./service/game";
 import { resolveEpoch, runPass, type LoopState } from "./service/loop";
 
@@ -31,7 +31,7 @@ import { resolveEpoch, runPass, type LoopState } from "./service/loop";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main(): Promise<void> {
-  const config = loadRelayerConfig(process.env);
+  const config = loadRelayerConfig(withCredentialSeed(process.env));
 
   const provider = new JsonRpcProvider(config.rpcUrl);
   const wallet = new Wallet(config.privateKey, provider);

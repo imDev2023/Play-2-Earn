@@ -6,6 +6,7 @@ import {
   chainExhaustionAlert,
   fundingAlert,
   livenessAlert,
+  seedMismatchAlert,
   settlementLagAlert,
 } from "./conditions";
 import type { RelayerConfig } from "./config";
@@ -90,6 +91,23 @@ export function resolveEpoch(
   );
 }
 
+/**
+ * The gas balance, or nothing if the node would not answer.
+ *
+ * A failed balance read is an RPC fault, not an empty wallet, and reporting it as one
+ * would page an operator to top up an account that is already funded. Skipping the
+ * check for this pass is the honest answer; the next successful pass reports it, and
+ * persistent failure surfaces as `rpc-down` anyway.
+ */
+async function fundingAlertOrNull(deps: LoopDeps, config: RelayerConfig): Promise<Alert | null> {
+  try {
+    return fundingAlert(await deps.balanceOf(), config.ethWarnWei, config.ethPageWei);
+  } catch (error) {
+    deps.log(`balance read failed: ${(error as Error).message}`);
+    return null;
+  }
+}
+
 /** Current liveness, read from the timestamps the last successful pass left behind. */
 function livenessNow(deps: LoopDeps, state: LoopState) {
   return livenessState({
@@ -144,11 +162,27 @@ export async function runPass(deps: LoopDeps, state: LoopState): Promise<PassRes
 
   // The chain head moves under us on every settle, so the epoch is re-derived rather
   // than remembered. This is also what makes a restart mid-epoch a non-event.
-  const round = roundForHead(state.chain, head);
-  if (round === 0) {
-    const resolved = resolveEpoch(config.masterSeed, head, config.chainLength);
-    state.epoch = resolved.epoch;
-    state.chain = resolved.chain;
+  //
+  // Unresolvable is a *condition*, not an exception, once the service is past boot. At
+  // boot it is right to refuse to start; here, throwing would abort the pass before the
+  // funding, liveness and heartbeat steps, so the relayer would go quiet in the one
+  // situation where it can settle nothing at all - and it would repeat the full scan on
+  // every pass while doing it.
+  if (roundForHead(state.chain, head) === 0) {
+    try {
+      const resolved = resolveEpoch(config.masterSeed, head, config.chainLength);
+      state.epoch = resolved.epoch;
+      state.chain = resolved.chain;
+    } catch {
+      deps.log(`on-chain head ${head} is on no chain derivable from this seed`);
+      alerts.push(seedMismatchAlert());
+      // No settle and no rotation are possible, but the balance and the heartbeat still
+      // are, and an operator staring at a silent relayer needs both.
+      const funding = await fundingAlertOrNull(deps, config);
+      if (funding) alerts.push(funding);
+      if (liveness === "alive") await deps.pingAlive();
+      return { alerts, assessed: ALERT_KEYS };
+    }
   }
 
   const exhaustion = chainExhaustionAlert(
@@ -190,14 +224,23 @@ export async function runPass(deps: LoopDeps, state: LoopState): Promise<PassRes
     }
   } else if (shouldRotate(state.chain, head, config.rotationMargin)) {
     // Only legal between bets, which is why it is attempted here and not after a settle.
-    const next = epochChain(config.masterSeed, state.epoch + 1, config.chainLength);
-    await (await game.rotateChain(next[0])).wait();
-    state.epoch += 1;
-    state.chain = next;
-    deps.log(`rotated to epoch ${state.epoch}`);
+    //
+    // And it races ordinary play: a bet placed between the `activeBetId()` read above
+    // and this transaction landing makes it revert, which is normal traffic rather than
+    // a fault. The epoch advances only on success, so a lost race simply retries on the
+    // next idle pass.
+    try {
+      const next = epochChain(config.masterSeed, state.epoch + 1, config.chainLength);
+      await (await game.rotateChain(next[0])).wait();
+      state.epoch += 1;
+      state.chain = next;
+      deps.log(`rotated to epoch ${state.epoch}`);
+    } catch (error) {
+      deps.log(`rotation failed at epoch ${state.epoch}: ${(error as Error).message}`);
+    }
   }
 
-  const funding = fundingAlert(await deps.balanceOf(), config.ethWarnWei, config.ethPageWei);
+  const funding = await fundingAlertOrNull(deps, config);
   if (funding) alerts.push(funding);
 
   // The dead man's switch is pinged only while the connection is provably alive, and

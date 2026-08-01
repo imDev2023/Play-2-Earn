@@ -103,6 +103,28 @@ export function chainExhaustionAlert(
 }
 
 /**
+ * The on-chain head is on no chain this seed can derive.
+ *
+ * At boot this refuses to start, which is right: a relayer that cannot produce a single
+ * valid reveal should not pretend to be running. Discovered mid-flight it is a
+ * different situation, because the process is already up and the only useful thing it
+ * can do is say so loudly. It means the game is effectively unrelayed - every bet will
+ * run to its refund - and no restart fixes it, because the fault is the seed or the
+ * deployment, not the process.
+ */
+export function seedMismatchAlert(): Alert {
+  return {
+    key: "seed-mismatch",
+    severity: "page",
+    summary: "Relayer cannot settle anything: the on-chain commitment is not on its chain.",
+    detail:
+      "Either RELAYER_SEED is wrong for this deployment, or the chain was rotated from a " +
+      "different one. Restarting will not help. Every bet will time out into a refund " +
+      "until the correct seed is restored.",
+  };
+}
+
+/**
  * Connection liveness.
  *
  * This is the condition that catches the failure the others cannot see: a dropped

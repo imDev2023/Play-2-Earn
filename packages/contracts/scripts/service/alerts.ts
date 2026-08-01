@@ -27,6 +27,7 @@ export const ALERT_KEYS = [
   "rpc-down",
   "chain-stalled",
   "chain-exhaustion",
+  "seed-mismatch",
   "relayer-funding",
 ] as const;
 

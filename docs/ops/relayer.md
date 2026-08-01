@@ -88,7 +88,16 @@ sudo systemd-creds encrypt --name=relayer-seed - /etc/rushood/seed.cred
 # paste the seed, then Ctrl-D
 ```
 
-Then in the unit: `LoadCredentialEncrypted=relayer-seed:/etc/rushood/seed.cred`, and read it from `$CREDENTIALS_DIRECTORY/relayer-seed` at start.
+Then add to the unit:
+
+```
+LoadCredentialEncrypted=relayer-seed:/etc/rushood/seed.cred
+```
+
+and drop `RELAYER_SEED` from the environment file.
+The service reads `$CREDENTIALS_DIRECTORY/relayer-seed` on its own when `RELAYER_SEED` is unset, so nothing else is needed.
+The credential name must be exactly `relayer-seed`.
+An explicit `RELAYER_SEED` in the environment still wins, so you can override it by hand mid-incident without editing the unit.
 
 **Rotating the seed does not require a redeploy.**
 The chain design already supports it: `rotateChain(newGenesis)` accepts any new tip, and is legal whenever no bet is in flight.
@@ -141,6 +150,7 @@ Pinging on settlement would make a quiet night with no bets look identical to a 
 | `rpc-down` | page | Polls are failing; nothing will be settled |
 | `chain-stalled` | page | The node answers but its head is frozen |
 | `chain-exhaustion` | page | Rotation was due and has not happened |
+| `seed-mismatch` | page | The on-chain head is on no chain this seed can derive |
 | `relayer-funding` | warn, then page | Gas balance is low, then nearly out |
 
 Each condition is delivered once when it starts and resolved once when it clears, not repeated every pass.
@@ -172,6 +182,13 @@ Rotation is only legal between bets, so this means either the relayer is down, o
 1. Confirm the relayer is running and settling.
 2. If it is running, this resolves itself at the next gap between bets.
 3. If the chain reaches its end with a bet in flight, that bet **cannot be settled at all** and will have to be refunded after the timeout. Pause the game to stop new bets, let the in-flight one refund, then rotate.
+
+**`seed-mismatch`.**
+The relayer is running and can settle nothing at all, so every bet placed from here will run to its refund.
+Restarting will not help: the fault is the seed or the deployment, not the process.
+1. Confirm which seed the service is actually using. If it came from a credential, check that `LoadCredentialEncrypted` names the file you think it does.
+2. Compare `currentCommit()` on the game against the chain your seed derives. If the game was rotated by another operator or another host, that is your answer.
+3. Restore the correct seed and restart. Do not rotate the on-chain chain to match a seed you are unsure of; that decision is irreversible and every future roll depends on it.
 
 **`relayer-funding`.**
 Send ETH to the relayer address, which is logged on every boot.

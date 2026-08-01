@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { isAddress } from "ethers";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "../lib/hashchain";
 
@@ -48,12 +50,20 @@ export interface RelayerConfig {
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * A positive whole number.
+ *
+ * Integer rather than merely finite because every one of these counts something
+ * discrete - reveals in a chain, milliseconds on a clock. A fractional chain length
+ * would silently disagree with the loop bound that builds the chain, so the configured
+ * length and the real one would differ by a rounding rule nobody wrote down.
+ */
 function optionalNumber(env: Env, key: string, fallback: number, problems: string[]): number {
   const raw = env[key];
   if (raw === undefined || raw === "") return fallback;
   const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    problems.push(`${key} must be a positive number (got ${JSON.stringify(raw)})`);
+  if (!Number.isInteger(value) || value <= 0) {
+    problems.push(`${key} must be a positive whole number (got ${JSON.stringify(raw)})`);
     return fallback;
   }
   return value;
@@ -69,6 +79,40 @@ function optionalWei(env: Env, key: string, fallback: bigint, problems: string[]
   } catch {
     problems.push(`${key} must be a non-negative integer in wei (got ${JSON.stringify(raw)})`);
     return fallback;
+  }
+}
+
+/** The credential name the systemd unit loads the seed under. */
+export const SEED_CREDENTIAL_NAME = "relayer-seed";
+
+/**
+ * Take the seed from a systemd credential when it is not already in the environment.
+ *
+ * `systemd-creds` is the custody mechanism the runbook recommends, because it keeps the
+ * seed encrypted at rest and out of `systemctl show`. systemd hands it to the process
+ * as a file under `$CREDENTIALS_DIRECTORY` rather than as an environment variable, so
+ * without this the recommended path would produce a service that refuses to boot,
+ * naming a variable the operator had deliberately not set.
+ *
+ * The environment still wins where both are present: an operator overriding the seed by
+ * hand, mid-incident, should not be silently ignored in favour of a file.
+ *
+ * The reader is injectable so the tests do not need a filesystem.
+ */
+export function withCredentialSeed(
+  env: Env,
+  readCredential: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): Env {
+  if (env.RELAYER_SEED?.trim()) return env;
+  const directory = env.CREDENTIALS_DIRECTORY;
+  if (!directory) return env;
+  try {
+    return { ...env, RELAYER_SEED: readCredential(join(directory, SEED_CREDENTIAL_NAME)) };
+  } catch {
+    // Deliberately silent. The boot failure that follows names RELAYER_SEED, which is
+    // the actionable message; a read error on a path the operator may never have
+    // configured would only bury it.
+    return env;
   }
 }
 
@@ -99,7 +143,11 @@ export function loadRelayerConfig(env: Env): RelayerConfig {
     problems.push("RELAYER_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key");
   }
 
-  const masterSeed = env.RELAYER_SEED;
+  // Trimmed like every other value here. A seed arriving from a `.env` file or a
+  // secrets manager routinely carries a trailing newline, and an untrimmed one would
+  // slip past the dev-seed check below by a single invisible character - defeating the
+  // one guard that stands between a public seed and a real deployment.
+  const masterSeed = env.RELAYER_SEED?.trim();
   if (!masterSeed) {
     problems.push("RELAYER_SEED is required and has no default in production");
   } else if (masterSeed === DEFAULT_MASTER_SEED) {

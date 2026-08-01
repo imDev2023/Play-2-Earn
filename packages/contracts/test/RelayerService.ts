@@ -14,7 +14,11 @@ import {
   type AlertKey,
   type AlertSink,
 } from "../scripts/service/alerts";
-import { loadRelayerConfig, type RelayerConfig } from "../scripts/service/config";
+import {
+  loadRelayerConfig,
+  withCredentialSeed,
+  type RelayerConfig,
+} from "../scripts/service/config";
 import { chainExhaustionAlert, fundingAlert } from "../scripts/service/conditions";
 import { connectGame } from "../scripts/service/game";
 import { livenessState } from "../scripts/service/liveness";
@@ -28,9 +32,15 @@ import { resolveEpoch, runPass, type LoopDeps } from "../scripts/service/loop";
  * one bet at a time, so a single unsettled bet is not one unhappy player but every
  * player, until somebody notices. These tests are about noticing.
  *
- * All of it is pure. The decisions worth testing - is the connection actually alive,
- * should this page, has this already been paged - are the ones a live chain would make
- * hardest to exercise, so none of them are allowed to depend on one.
+ * The suites below the last one are pure. The decisions worth testing - is the
+ * connection actually alive, should this page, has this already been paged - are the
+ * ones a live chain would make hardest to exercise, so none of them are allowed to
+ * depend on one.
+ *
+ * The final suite does drive a real deployment, for one reason: `service/game.ts`
+ * declares the contract's ABI by hand, because Hardhat's artifacts do not exist in a
+ * production container. Running the real contract through that copy is what keeps it
+ * honest, so a signature change breaks a test rather than a deployment.
  */
 
 const VALID_ENV = {
@@ -85,6 +95,54 @@ describe("relayer service config (#39)", () => {
     expect(() => loadRelayerConfig({ ...VALID_ENV, RELAYER_GAME_ADDRESS: "not-an-address" })).to.throw(
       /RELAYER_GAME_ADDRESS/,
     );
+  });
+
+  /**
+   * A seed out of a `.env` file or a secrets manager routinely carries a trailing
+   * newline. Untrimmed, it would slip past the dev-seed check by one invisible
+   * character, which is the one guard between a public seed and a real deployment.
+   */
+  it("sees through whitespace around the committed dev seed", () => {
+    expect(() =>
+      loadRelayerConfig({ ...VALID_ENV, RELAYER_SEED: `${DEFAULT_MASTER_SEED}\n` }),
+    ).to.throw(/dev seed/i);
+  });
+
+  it("rejects a fractional chain length rather than rounding it silently", () => {
+    expect(() => loadRelayerConfig({ ...VALID_ENV, RELAYER_CHAIN_LENGTH: "100.5" })).to.throw(
+      /whole number/,
+    );
+  });
+
+  /**
+   * `systemd-creds` is the custody mechanism the runbook recommends, and systemd
+   * delivers it as a file rather than an environment variable. Without this the
+   * recommended path would produce a service that refuses to boot, naming a variable
+   * the operator deliberately did not set.
+   */
+  it("takes the seed from a systemd credential when the environment has none", () => {
+    const { RELAYER_SEED: _omitted, ...withoutSeed } = VALID_ENV;
+    const env = withCredentialSeed(
+      { ...withoutSeed, CREDENTIALS_DIRECTORY: "/run/credentials/rushood" },
+      (path) => {
+        expect(path).to.equal("/run/credentials/rushood/relayer-seed");
+        return "seed-from-the-credential";
+      },
+    );
+    expect(loadRelayerConfig(env).masterSeed).to.equal("seed-from-the-credential");
+  });
+
+  it("lets an explicit environment seed win over the credential", () => {
+    const env = withCredentialSeed({ ...VALID_ENV, CREDENTIALS_DIRECTORY: "/run/credentials" }, () => "from-file");
+    expect(env.RELAYER_SEED).to.equal(VALID_ENV.RELAYER_SEED);
+  });
+
+  it("still fails naming RELAYER_SEED when the credential cannot be read", () => {
+    const { RELAYER_SEED: _omitted, ...withoutSeed } = VALID_ENV;
+    const env = withCredentialSeed({ ...withoutSeed, CREDENTIALS_DIRECTORY: "/run/credentials" }, () => {
+      throw new Error("ENOENT");
+    });
+    expect(() => loadRelayerConfig(env)).to.throw(/RELAYER_SEED/);
   });
 
   it("never puts the seed or the key in the error it throws", () => {
@@ -557,5 +615,97 @@ describe("relayer service against a live game (#39)", () => {
     expect(logged.join("\n")).to.match(/settle failed/);
     expect([...assessed]).to.deep.equal([...ALERT_KEYS]);
     expect(await deployed.activeBetId()).to.equal(1n);
+  });
+
+  /**
+   * Rotation races ordinary play: a bet placed between the `activeBetId()` read and the
+   * transaction landing makes it revert. That is traffic, not a fault, so the pass must
+   * survive it and the epoch must not advance on a rotation that never happened.
+   */
+  it("keeps its epoch when a rotation loses the race and reverts", async () => {
+    const { player, game: deployed, relayer, address } = await deploy();
+    const config = configFor();
+    const { deps, game, logged } = await makeDeps(address, relayer, config);
+
+    let state = await freshState(game, config);
+    for (let i = 0; i < CHAIN_LENGTH - config.rotationMargin - 1; i++) {
+      await deployed.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, BigInt(i + 1));
+      await runPass(deps, state);
+    }
+
+    const failingRotate = {
+      ...deps,
+      game: {
+        activeBetId: () => deps.game.activeBetId(),
+        currentCommit: () => deps.game.currentCommit(),
+        SETTLE_TIMEOUT: () => deps.game.SETTLE_TIMEOUT(),
+        bets: (id: bigint) => deps.game.bets(id),
+        settleBet: (reveal: string) => deps.game.settleBet(reveal),
+        interface: deps.game.interface,
+        rotateChain: async () => {
+          throw new Error("CannotRotateMidBet");
+        },
+      } as unknown as typeof deps.game,
+    };
+
+    const epochBefore = state.epoch;
+    const { assessed } = await runPass(failingRotate, state);
+
+    expect(state.epoch).to.equal(epochBefore);
+    expect(logged.join("\n")).to.match(/rotation failed/);
+    expect([...assessed]).to.deep.equal([...ALERT_KEYS]);
+  });
+
+  /**
+   * A balance read that fails is an RPC fault, not an empty wallet. Reporting it as one
+   * would page an operator to top up an account that is already funded.
+   */
+  it("does not report a failed balance read as an empty wallet", async () => {
+    const { address, relayer } = await deploy();
+    const config = configFor();
+    const { deps, game, logged } = await makeDeps(address, relayer, config);
+    const state = await freshState(game, config);
+
+    const { alerts } = await runPass(
+      {
+        ...deps,
+        balanceOf: async () => {
+          throw new Error("connection reset");
+        },
+      },
+      state,
+    );
+
+    expect(alerts.map((a) => a.key)).to.not.include("relayer-funding");
+    expect(logged.join("\n")).to.match(/balance read failed/);
+  });
+
+  /**
+   * A head that sits on no derivable chain means this relayer can settle nothing at
+   * all. Discovered at boot that is a refusal to start; discovered mid-flight the
+   * process is already up, and the only useful thing it can do is page rather than
+   * throw its way through every remaining check.
+   */
+  it("pages instead of throwing when the head is on no chain it can derive", async () => {
+    const { address, relayer } = await deploy();
+    const config = configFor();
+    const { deps, game } = await makeDeps(address, relayer, config);
+    const state = await freshState(game, config);
+
+    const foreignHead = ethers.keccak256(ethers.toUtf8Bytes("a chain from a different seed"));
+    const stranded = {
+      ...deps,
+      game: {
+        ...deps.game,
+        currentCommit: async () => foreignHead,
+        activeBetId: async () => 0n,
+      } as unknown as typeof deps.game,
+    };
+
+    const { alerts, assessed } = await runPass(stranded, state);
+
+    expect(alerts.map((a) => a.key)).to.include("seed-mismatch");
+    expect(alerts.find((a) => a.key === "seed-mismatch")?.severity).to.equal("page");
+    expect([...assessed]).to.deep.equal([...ALERT_KEYS]);
   });
 });
