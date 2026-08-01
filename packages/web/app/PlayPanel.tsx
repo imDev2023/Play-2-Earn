@@ -25,6 +25,7 @@ import {
   TIERS,
 } from "../lib/contracts";
 import { useBetHistory } from "../lib/useBetHistory";
+import { betBlock, betBlockMessage } from "../lib/bet-validity";
 import { readableError } from "../lib/errors";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
@@ -106,8 +107,9 @@ export function PlayPanel() {
     stake = null;
   }
 
-  const belowMin = stake !== null && minBet !== undefined && stake < minBet;
-  const aboveMax = stake !== null && maxBet !== undefined && stake > maxBet;
+  const block = betBlock({ stake, minBet, maxBet, balance });
+  const belowMin = block === "below-min";
+  const aboveMax = block === "above-max";
   const potentialWin = stake
     ? (stake * BigInt(EDGE_NUM) * BigInt(TIERS[tier].odds)) / BigInt(EDGE_DEN)
     : null;
@@ -138,7 +140,7 @@ export function PlayPanel() {
   });
 
   async function placeBet() {
-    if (!stake || belowMin || aboveMax || wrongNetwork) return;
+    if (!stake || block !== null || wrongNetwork) return;
     setError(null);
     setResult(null);
     setBetTier(tier);
@@ -282,8 +284,8 @@ export function PlayPanel() {
 
         <button
           data-testid="place-bet"
-          style={primaryButton(busy || !stake || belowMin || aboveMax || wrongNetwork)}
-          disabled={busy || !stake || belowMin || aboveMax || wrongNetwork}
+          style={primaryButton(busy || !stake || block !== null || wrongNetwork)}
+          disabled={busy || !stake || block !== null || wrongNetwork}
           onClick={placeBet}
         >
           {wrongNetwork
@@ -293,9 +295,9 @@ export function PlayPanel() {
               : `Place bet · ${stake ? formatUnits(stake, 18) : "…"} RUSH`}
         </button>
 
-        {(belowMin || aboveMax) && (
+        {block && (
           <p data-testid="bet-invalid" style={{ color: "var(--hot)", margin: 0, fontSize: "0.85rem" }}>
-            {belowMin ? "Stake is below the minimum bet." : "Stake exceeds the max for this tier."}
+            {betBlockMessage(block, balance)}
           </p>
         )}
         {error && (
