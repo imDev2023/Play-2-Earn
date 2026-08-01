@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
-import { formatUnits, maxUint256, parseUnits } from "viem";
+import { formatUnits, parseUnits } from "viem";
 import {
   useAccount,
   useChainId,
@@ -26,6 +26,7 @@ import {
 } from "../lib/contracts";
 import { useBetHistory } from "../lib/useBetHistory";
 import { betBlock, betBlockMessage } from "../lib/bet-validity";
+import { approvalAmount, betsCovered } from "../lib/approval";
 import { readableError } from "../lib/errors";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
@@ -64,6 +65,9 @@ export function PlayPanel() {
   // describes the settled bet, not whatever the ladder is showing now.
   const [betTier, setBetTier] = useState(0);
   const [stakeInput, setStakeInput] = useState("100");
+  // How many bets the approval now in flight covers, so the status line can say what
+  // the player is being asked to approve rather than leave them to read the hex.
+  const [approvalBets, setApprovalBets] = useState(0);
 
   const wrongNetwork = isConnected && chainId !== ACTIVE_CHAIN_ID;
 
@@ -154,13 +158,16 @@ export function PlayPanel() {
           })
         : 0n;
       if (allowance < stake) {
-        // Approve once (max) so repeat bets skip the approval step.
+        // Approve a budget covering a run of bets, so repeat rolls stay one-tap
+        // without asking the wallet for an unlimited cap. See lib/approval.ts.
+        const amount = approvalAmount({ stake, balance });
+        setApprovalBets(betsCovered(amount, stake));
         setStatus("approving");
         const approveHash = await writeAsync({
           address: RUSH_ADDRESS,
           abi: RUSH_ABI,
           functionName: "approve",
-          args: [GAME_ADDRESS, maxUint256],
+          args: [GAME_ADDRESS, amount],
         });
         await waitForTransactionReceipt(wagmiConfig, { hash: approveHash });
       }
@@ -291,7 +298,7 @@ export function PlayPanel() {
           {wrongNetwork
             ? "Switch network to play"
             : busy
-              ? statusLabel(status)
+              ? statusLabel(status, approvalBets)
               : `Place bet · ${stake ? formatUnits(stake, 18) : "…"} RUSH`}
         </button>
 
@@ -316,8 +323,12 @@ export function PlayPanel() {
   );
 }
 
-function statusLabel(status: Status): string {
-  if (status === "approving") return "Approving RUSH…";
+function statusLabel(status: Status, approvalBets: number): string {
+  // Name the budget, so the number in the wallet prompt is one the player was told to
+  // expect rather than one they have to work out from the hex.
+  if (status === "approving") {
+    return approvalBets > 1 ? `Approving a budget for ${approvalBets} bets…` : "Approving RUSH…";
+  }
   if (status === "placing") return "Placing bet…";
   return "Drawing…";
 }

@@ -7,10 +7,9 @@ import { betBlock, betBlockMessage } from "../lib/bet-validity";
  *
  * It exists because placing a bet asks the wallet for a spending approval before it
  * asks the chain for anything. A stake the player cannot cover therefore used to cost
- * them an approval prompt, flagged red by their wallet because the approval is
- * unlimited, followed by a revert inside an ERC-20 transfer whose message named
- * `transferFrom` rather than their balance. Every case here is knowable from state
- * already on screen.
+ * them an approval prompt, followed by a revert inside an ERC-20 transfer whose
+ * message named `transferFrom` rather than their balance. Every case here is knowable
+ * from state already on screen.
  */
 
 const RUSH = (n: bigint) => n * 10n ** 18n;
