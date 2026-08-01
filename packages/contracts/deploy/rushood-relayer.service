@@ -1,0 +1,73 @@
+# RUSHOOD settlement relayer (#39).
+#
+# Install to /etc/systemd/system/rushood-relayer.service. See docs/ops/relayer.md.
+#
+# This is the same artifact on a free testnet box and on the production host; only the
+# credential file differs. Running the two identically is the point - the runbook that
+# gets exercised on testnet is then the one that is true at launch.
+
+[Unit]
+Description=RUSHOOD settlement relayer
+Documentation=https://github.com/imDev2023/Play-2-Earn/blob/main/docs/ops/relayer.md
+After=network-online.target
+Wants=network-online.target
+
+# Do not give up. The default burst limit stops restarting after 5 attempts in 10s,
+# which converts a transient RPC outage at 3am into a relayer that is still down at 9.
+# This belongs in [Unit], not [Service]: systemd parses the rate limit here, and a copy
+# under [Service] is silently ignored, leaving the default burst limit in force.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=relayer
+Group=relayer
+WorkingDirectory=/opt/rushood/packages/contracts
+
+# The workspace binary directly, not `npx`. npx wants a writable cache under $HOME, and
+# the sandboxing below deliberately leaves it nothing writable, so `npx tsx` here fails
+# to start on a correctly hardened host.
+ExecStart=/opt/rushood/node_modules/.bin/tsx scripts/relayer-service.ts
+
+# tsx compiles to a cache directory, and PrivateTmp gives this unit a private /tmp that
+# is writable while the rest of the filesystem is not.
+Environment=HOME=/tmp
+
+# Secrets are loaded from a root-owned 0600 file rather than being written into this
+# unit, which is world-readable. See the runbook for systemd-creds, which is better
+# still because it keeps the seed encrypted at rest and out of `systemctl show`.
+EnvironmentFile=/etc/rushood/relayer.env
+
+# Restart always, including on a clean exit. The service has no successful terminal
+# state: if it stopped, the game stopped with it.
+Restart=always
+RestartSec=5s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rushood-relayer
+
+# The process reads config from the environment and talks to one HTTPS endpoint. It
+# has no reason to touch the filesystem, gain privileges, or see other users' processes.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+# AF_UNIX is included because name resolution and journald both reach the host over a
+# unix socket; without it the process cannot resolve the RPC endpoint or log a word
+# about why.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+# Nothing outside the private /tmp above needs to be writable. The seed arrives in the
+# environment and is never written down.
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

@@ -216,3 +216,11 @@ export {
   type ParseResult,
   type RawVerifyInputs,
 } from "./parse";
+
+export {
+  LAG_WARNING_SECONDS,
+  relayerHealth,
+  type RelayerHealth,
+  type RelayerHealthInputs,
+  type RelayerStatus,
+} from "./relayer-health";

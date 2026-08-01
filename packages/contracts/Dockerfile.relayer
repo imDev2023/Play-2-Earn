@@ -1,0 +1,44 @@
+# The RUSHOOD settlement relayer (#39).
+#
+# Deliberately carries no Solidity toolchain. The service entrypoint is Hardhat-free
+# and binds to a hand-written ABI, so the image needs the workspace's runtime
+# dependencies and nothing else. A production image that can compile contracts is a
+# production image with a compiler's worth of attack surface it never uses.
+FROM node:22-alpine AS deps
+
+WORKDIR /app
+
+# The workspace root resolves @rushood/verifier, which the service imports for the
+# relayer-health state machine it shares with the admin console.
+COPY package.json package-lock.json ./
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/verifier/package.json packages/verifier/
+
+RUN npm ci --omit=dev --workspace @rushood/contracts --include-workspace-root
+
+FROM node:22-alpine AS runtime
+
+# Settling is the only thing this process does and it needs no filesystem, so it runs
+# unprivileged. The seed arrives in the environment and never touches disk.
+RUN addgroup -S relayer && adduser -S -G relayer relayer
+
+WORKDIR /app
+# Only the root node_modules. npm workspaces hoist, so packages/contracts has no
+# node_modules of its own, and asking for one fails the build outright.
+COPY --from=deps /app/node_modules ./node_modules
+COPY packages/verifier/src ./packages/verifier/src
+COPY packages/verifier/package.json ./packages/verifier/
+COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/contracts/tsconfig.json ./packages/contracts/
+COPY packages/contracts/scripts ./packages/contracts/scripts
+
+USER relayer
+WORKDIR /app/packages/contracts
+
+# No HEALTHCHECK here on purpose. Process liveness is the question that misleads: a
+# relayer with a dropped connection stays up and answers every local probe while
+# settling nothing. Liveness is asserted against the chain instead, and reported
+# outward by the dead man's switch (RELAYER_HEALTHCHECK_URL).
+# The workspace binary directly rather than `npx`, which wants a writable cache under
+# $HOME that an unprivileged user in a read-only-by-habit image should not need.
+ENTRYPOINT ["/app/node_modules/.bin/tsx", "scripts/relayer-service.ts"]

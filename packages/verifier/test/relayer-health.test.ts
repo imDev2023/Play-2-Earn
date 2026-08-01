@@ -1,13 +1,17 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { LAG_WARNING_SECONDS, relayerHealth } from "../lib/admin/health";
+import { LAG_WARNING_SECONDS, relayerHealth } from "../src/relayer-health";
 
 /**
  * The relayer health / settlement-lag indicator.
  *
- * Derived entirely from chain state — an active bet's age against `SETTLE_TIMEOUT` —
- * so it reports the thing the operator actually cares about (are players' bets being
+ * Derived entirely from chain state - an active bet's age against `SETTLE_TIMEOUT` - so
+ * it reports the thing the operator actually cares about (are players' bets being
  * settled?) rather than whether some process answers a health check.
+ *
+ * It lives in the verifier because both the admin console and the relayer's pager read
+ * it, and a second copy of these thresholds is how the console and the pager end up
+ * disagreeing about whether the game is healthy.
  */
 
 const TIMEOUT = 3600n; // RushoodGame.SETTLE_TIMEOUT
