@@ -50,6 +50,24 @@ describe("switchFailureMessage", () => {
     assert.equal(switchFailureMessage(new Error("MetaMask Tx Signature: User denied")), null);
   });
 
+  /**
+   * The wording is whatever language the wallet is in, so matching English phrases
+   * would show someone an error for a decision they deliberately made. EIP-1193's code
+   * is the part that does not change between locales.
+   */
+  it("recognises a rejection by its EIP-1193 code, whatever the language", () => {
+    const spanish = Object.assign(new Error("El usuario rechazo la solicitud."), { code: 4001 });
+    assert.equal(switchFailureMessage(spanish), null);
+  });
+
+  /** viem and wagmi wrap the provider's error rather than replacing it. */
+  it("finds the rejection code through the wrappers viem puts around it", () => {
+    const wrapped = Object.assign(new Error("An unknown RPC error occurred."), {
+      cause: Object.assign(new Error("inner"), { code: 4001 }),
+    });
+    assert.equal(switchFailureMessage(wrapped), null);
+  });
+
   it("falls back to the wallet's own first line for anything unrecognised", () => {
     assert.equal(
       switchFailureMessage(new Error("Wallet is locked.\n\nVersion: viem@2.55.2")),
