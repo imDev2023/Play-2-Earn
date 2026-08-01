@@ -15,7 +15,23 @@ import { epochChain, roundForHead, settleNextBet, shouldRotate } from "./lib/rel
  *
  *   npx hardhat run scripts/relayer.ts --network localhost
  */
+/**
+ * The committed default is a local-development convenience and a public value: anyone
+ * reading this repository can rebuild the whole reveal chain from it and know every
+ * future roll before it is placed. `deploy-launch.ts` already refuses it off localhost;
+ * so does this, because a dev script pointed at a public network by accident is exactly
+ * how it would otherwise be used (#39).
+ *
+ * For anything that is not a local node, run `scripts/relayer-service.ts` instead.
+ */
 const MASTER_SEED = process.env.RELAYER_SEED ?? DEFAULT_MASTER_SEED;
+if (MASTER_SEED === DEFAULT_MASTER_SEED && network.name !== "localhost" && network.name !== "hardhat") {
+  throw new Error(
+    `RELAYER_SEED is unset on "${network.name}", so the committed dev seed would be used. ` +
+      "It is public: every future roll would be predictable in advance. Set a secret seed, " +
+      "and use scripts/relayer-service.ts for any real deployment.",
+  );
+}
 const CHAIN_LENGTH = Number(process.env.RELAYER_CHAIN_LENGTH ?? DEFAULT_CHAIN_LENGTH);
 // Rotate once the head reaches this many reveals from the end of the chain.
 const ROTATION_MARGIN = Number(process.env.RELAYER_ROTATION_MARGIN ?? 4);
