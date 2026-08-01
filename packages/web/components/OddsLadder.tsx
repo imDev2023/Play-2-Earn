@@ -5,7 +5,7 @@ import { multiplierLabel, TIERS } from "../lib/contracts";
 import { tierAccent } from "../lib/ui";
 
 /**
- * The Odds Ladder — RUSHOOD's signature. Risk ascends visually: the coin flip sits
+ * The Odds Ladder - RUSHOOD's signature. Risk ascends visually: the coin flip sits
  * at the base, the 1-in-1000 moonshot is crowned and glowing at the top. Each rung
  * is a selectable bet; the accent runs cool→hot up the ladder.
  */
@@ -105,8 +105,20 @@ function rung(
     background: selected
       ? `linear-gradient(90deg, ${hexA(accent, 0.16)}, ${hexA(accent, 0.04)})`
       : "var(--panel-2)",
-    border: `1px solid ${selected ? accent : "var(--line)"}`,
-    borderLeft: `3px solid ${accent}`,
+    // Longhands only, never the `border` shorthand. The rung's left edge is a thick
+    // accent bar while the other three are a thin outline that changes on selection,
+    // and mixing `border` with `borderLeft` makes React warn on every re-render: it
+    // cannot tell whether the shorthand should clobber the longhand, and in the DOM
+    // the order the two are applied decides the outcome.
+    borderStyle: "solid",
+    borderTopWidth: "1px",
+    borderRightWidth: "1px",
+    borderBottomWidth: "1px",
+    borderLeftWidth: "3px",
+    borderTopColor: selected ? accent : "var(--line)",
+    borderRightColor: selected ? accent : "var(--line)",
+    borderBottomColor: selected ? accent : "var(--line)",
+    borderLeftColor: accent,
     opacity: disabled && !selected ? 0.7 : 1,
     transition: "border-color 0.12s ease, background 0.12s ease",
   };
