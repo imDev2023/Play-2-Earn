@@ -4,12 +4,12 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 
 /**
  * Team vesting (#26): the 10% team allocation is locked behind a 6-month cliff and
- * then vests linearly, reaching 100% at month 24 — i.e. 18 months of linear release
+ * then vests linearly, reaching 100% at month 24 - i.e. 18 months of linear release
  * after the cliff. Months are a fixed 30 days so the schedule is exact and auditable.
  *
  * At the cliff the first 6/24 = 25% unlocks in one step; the remaining 75% streams
  * out over the following 18 months. That is the standard cliff shape (and what
- * OpenZeppelin's VestingWalletCliff implements) — the cliff gates the stream, it
+ * OpenZeppelin's VestingWalletCliff implements) - the cliff gates the stream, it
  * does not restart it.
  *
  * Everything here is asserted through the public interface a beneficiary or a token
@@ -20,7 +20,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 const DAY = 24n * 60n * 60n;
 const MONTH = 30n * DAY;
 const CLIFF = 6n * MONTH; // 180 days
-const DURATION = 24n * MONTH; // 720 days — cliff + 18 months of linear vesting
+const DURATION = 24n * MONTH; // 720 days - cliff + 18 months of linear vesting
 
 const TEAM_ALLOCATION = 100_000_000n * 10n ** 18n; // 10% of the 1B supply
 
@@ -31,7 +31,7 @@ function expectedVested(elapsed: bigint): bigint {
   return (TEAM_ALLOCATION * elapsed) / DURATION;
 }
 
-describe("RushoodVesting — team allocation (#26)", () => {
+describe("RushoodVesting - team allocation (#26)", () => {
   async function deploy() {
     const [deployer, beneficiary, outsider] = await ethers.getSigners();
 

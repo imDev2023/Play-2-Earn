@@ -14,12 +14,12 @@ import type { Hex } from "@rushood/verifier";
 import { buildHashChain } from "../scripts/lib/hashchain";
 
 /**
- * #24 — a settled roll must be independently recomputable by anyone from data the
+ * #24 - a settled roll must be independently recomputable by anyone from data the
  * chain publishes: the bet id, the player's client entropy, the server reveal, and
  * the commitment the bet was locked against.
  *
  * These tests drive the real contract and then hand the *emitted* values to the
- * public `@rushood/verifier` package — the same module the `/verify` tool and the
+ * public `@rushood/verifier` package - the same module the `/verify` tool and the
  * in-app fairness panel use. If the verifier and the contract ever disagree, this
  * suite fails, which is the whole point: one formula, two implementations, pinned
  * together.
@@ -59,7 +59,7 @@ describe("Public fairness verifier (#24)", () => {
     const ctx = await deploy();
     const { game, player, chain } = ctx;
 
-    /** The named event from a receipt — what an outside observer reads off the chain. */
+    /** The named event from a receipt - what an outside observer reads off the chain. */
     const eventFrom = (receipt: ContractTransactionReceipt | null, name: string) =>
       receipt!.logs
         .map((log) => {
@@ -218,7 +218,7 @@ describe("Public fairness verifier (#24)", () => {
   describe("tamper detection", () => {
     /**
      * The first substitution of `field` that actually moves the draw. A forgery that
-     * happens to land on the same roll isn't a forgery of anything — searching for one
+     * happens to land on the same roll isn't a forgery of anything - searching for one
      * that does keeps these tests deterministic instead of relying on a lucky seed.
      */
     function forge(

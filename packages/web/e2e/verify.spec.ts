@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * The `/verify` tool is pure arithmetic — no chain, no wallet — so unlike the play
+ * The `/verify` tool is pure arithmetic - no chain, no wallet - so unlike the play
  * flow it can be exercised properly in CI. These fixtures are a real roll: `commitment`
  * is keccak256(serverReveal), and the roll/win values are what the contract itself
  * produces for these inputs (pinned against `RushoodGame.outcomeOf` in the contract
@@ -45,7 +45,7 @@ test("a winning roll is recomputed as a win", async ({ page }) => {
 
 test("the verifier quotes the same multipliers as the odds ladder", async ({ page }) => {
   // Integer division would render the coin flip as "1×" here while the ladder says
-  // "1.9×" — two numbers for one payout, on the page whose whole job is trust.
+  // "1.9×" - two numbers for one payout, on the page whose whole job is trust.
   await page.goto(link(COINFLIP_WIN));
   await expect(page.getByTestId("verify-result")).toContainText("1.9×");
 
@@ -56,7 +56,7 @@ test("the verifier quotes the same multipliers as the odds ladder", async ({ pag
   await expect(page.getByTestId("rung-0")).toContainText("1.9×");
 });
 
-test("confirms the hash-chain link — the reveal matches the commitment", async ({ page }) => {
+test("confirms the hash-chain link - the reveal matches the commitment", async ({ page }) => {
   await page.goto(link(MOONSHOT_MISS));
   await expect(page.getByTestId("verify-chain-link")).toContainText("✓");
   await expect(page.getByTestId("verify-chain-link")).toContainText(
@@ -119,7 +119,7 @@ test("the fairness model is disclosed in plain language, residual included", asy
   );
 
   const residual = page.getByTestId("fairness-residual");
-  // The disclosure is only worth anything if it names what's still trusted — including
+  // The disclosure is only worth anything if it names what's still trusted - including
   // the parts that don't flatter the house.
   await expect(residual).toContainText("The house runs the secret chain");
   await expect(residual).toContainText("not the zero-trust guarantee of an on-chain VRF");

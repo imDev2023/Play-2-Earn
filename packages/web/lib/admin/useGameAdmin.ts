@@ -10,13 +10,13 @@ import { successValue } from "./readResult";
  *
  * Nothing here is inferred: every parameter the console displays or preflights against
  * is read from the contract that enforces it, so the console can never quote a cap the
- * game stopped honouring. A missing value stays `undefined` rather than defaulting —
+ * game stopped honouring. A missing value stays `undefined` rather than defaulting -
  * an unreachable node must read as "unknown", not as "zero balance, unpaused".
  */
 
 /**
- * How often the console re-reads. An operator watches this page while acting on it —
- * a pause has to show up without a manual refresh — but nothing here changes fast
+ * How often the console re-reads. An operator watches this page while acting on it -
+ * a pause has to show up without a manual refresh - but nothing here changes fast
  * enough to justify following every block.
  */
 const REFRESH_MS = 5_000;

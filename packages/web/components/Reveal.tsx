@@ -7,7 +7,7 @@ import { multiplierLabel, TIERS } from "../lib/contracts";
 export type RevealPhase = "idle" | "drawing" | "won" | "lost";
 
 /**
- * The settlement reveal — RUSHOOD's one orchestrated moment. While the relayer
+ * The settlement reveal - RUSHOOD's one orchestrated moment. While the relayer
  * settles, the draw flickers through numbers; on settle it snaps to a win burst
  * or a quiet miss. Moonshot wins get their own callout.
  */
@@ -62,7 +62,7 @@ export function Reveal({
     <div data-testid="reveal" data-phase="lost" style={card("var(--line)")}>
       <span style={eyebrow}>No luck this round</span>
       <span className="mono" style={{ ...bigNumber("var(--loss)"), opacity: 0.8 }}>
-        —
+        -
       </span>
       <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
         The stake stays with the house. Run it back?

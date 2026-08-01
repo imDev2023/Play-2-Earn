@@ -1,5 +1,5 @@
 /**
- * @rushood/verifier — the public fairness verifier for RUSHOOD.
+ * @rushood/verifier - the public fairness verifier for RUSHOOD.
  *
  * A RUSHOOD roll is settled by a two-party commit-reveal. Before you bet, the
  * server has already committed to its next reveal on-chain (the head of a reverse
@@ -16,7 +16,7 @@
  * Neither side can grind: the server's value is fixed before your entropy exists,
  * and your entropy is fixed before the server's value is public.
  *
- * This module is that formula, and nothing else — no network, no wallet, no state.
+ * This module is that formula, and nothing else - no network, no wallet, no state.
  * Everything it needs is public: `betId`, `clientEntropy`, `serverReveal` and the
  * `commitment`, all emitted by `BetPlaced`/`BetSettled` and readable from
  * `RushoodGame.bets(betId)`. It is the single implementation shared by the `/verify`
@@ -29,7 +29,7 @@ import { encodePacked, keccak256 } from "viem";
 
 export type Hex = `0x${string}`;
 
-/** Odds N for each tier index — a 1-in-N shot. Mirrors `RushoodGame.odds()`. */
+/** Odds N for each tier index - a 1-in-N shot. Mirrors `RushoodGame.odds()`. */
 export const TIER_ODDS = [2n, 4n, 10n, 50n, 100n, 1000n] as const;
 
 /** Payout numerator/denominator: 0.95, a flat 5% house edge on every tier. */
@@ -50,7 +50,7 @@ export interface RollInputs {
 
 /** A recomputed draw. */
 export interface Roll {
-  /** R — the raw 256-bit draw, keccak256(serverReveal, clientEntropy, betId). */
+  /** R - the raw 256-bit draw, keccak256(serverReveal, clientEntropy, betId). */
   entropy: bigint;
   /** R reduced to the tier's range. A win is a roll of exactly 0. */
   roll: bigint;
@@ -63,7 +63,7 @@ export interface Roll {
 /** What a verification can find wrong. An empty list is a clean pass. */
 export type VerifyFailure =
   | "unknown-tier"
-  /** keccak256(serverReveal) is not the commitment — the reveal is not the committed one. */
+  /** keccak256(serverReveal) is not the commitment - the reveal is not the committed one. */
   | "commitment-mismatch"
   /** The recomputed roll differs from the one the chain reported. */
   | "roll-mismatch"
@@ -95,7 +95,7 @@ export interface Verdict {
 /** Thrown when a tier index has no entry in the published ladder. */
 export class UnknownTierError extends Error {
   constructor(tier: number) {
-    super(`unknown tier ${tier} — RUSHOOD publishes tiers 0..${TIER_ODDS.length - 1}`);
+    super(`unknown tier ${tier} - RUSHOOD publishes tiers 0..${TIER_ODDS.length - 1}`);
     this.name = "UnknownTierError";
   }
 }
@@ -105,7 +105,7 @@ export function isKnownTier(tier: number): boolean {
   return Number.isInteger(tier) && tier >= 0 && tier < TIER_ODDS.length;
 }
 
-/** The odds N for a tier — a 1-in-N shot. */
+/** The odds N for a tier - a 1-in-N shot. */
 export function oddsFor(tier: number): bigint {
   if (!isKnownTier(tier)) throw new UnknownTierError(tier);
   return TIER_ODDS[tier];
@@ -140,7 +140,7 @@ export function commitmentFor(serverReveal: Hex): Hex {
 }
 
 /**
- * Recompute a draw from its public inputs. Pure — the same arithmetic
+ * Recompute a draw from its public inputs. Pure - the same arithmetic
  * `RushoodGame.outcomeOf` runs on-chain.
  */
 export function computeRoll({ betId, tier, clientEntropy, serverReveal }: RollInputs): Roll {
@@ -158,7 +158,7 @@ export function computeRoll({ betId, tier, clientEntropy, serverReveal }: RollIn
  * Verify a settled roll: check the hash-chain link, recompute the draw, and (when
  * given) cross-check it against what the chain reported.
  *
- * Never throws on bad input — an unknown tier is reported as a failure like any
+ * Never throws on bad input - an unknown tier is reported as a failure like any
  * other, so a UI can render one verdict shape for every outcome.
  */
 export function verifyRoll(inputs: VerifyInputs): Verdict {
@@ -189,7 +189,7 @@ export function verifyRoll(inputs: VerifyInputs): Verdict {
 
 /**
  * The smallest client entropy (counting from 0) that produces the desired outcome
- * for a given bet. A test/demo helper — a player picks entropy at random, and
+ * for a given bet. A test/demo helper - a player picks entropy at random, and
  * grinding it buys nothing anyway, because the server's reveal is still secret when
  * the entropy is fixed.
  */
@@ -204,7 +204,7 @@ export function seedForOutcome(
   throw new Error(`no client entropy under ${limit} yields win=${wantWin} for this bet`);
 }
 
-/** Case-insensitive hex comparison — chains and wallets disagree about casing. */
+/** Case-insensitive hex comparison - chains and wallets disagree about casing. */
 function eqHex(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }

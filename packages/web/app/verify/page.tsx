@@ -19,7 +19,7 @@ export default function VerifyPage() {
         <h1 style={heading}>Verify a roll</h1>
         <p style={lede}>
           Paste a bet&apos;s public inputs and this page re-runs the draw. The check itself
-          is arithmetic in your browser — no result is taken on our word. The one button
+          is arithmetic in your browser - no result is taken on our word. The one button
           that touches the network is the optional{" "}
           <em>look the bet up on-chain</em> convenience, which reads the inputs through
           this app&apos;s node so you don&apos;t have to copy them by hand.
@@ -35,7 +35,7 @@ export default function VerifyPage() {
       <section style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
         <h2 style={subheading}>Don&apos;t trust this page either</h2>
         <p style={lede}>
-          This tool is a thin wrapper over an open-source module you can run yourself —
+          This tool is a thin wrapper over an open-source module you can run yourself -
           the same one the contract test suite pins against the on-chain formula. Every
           verify link works on the command line as-is:
         </p>

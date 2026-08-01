@@ -79,7 +79,7 @@ describe("parseVerifyInputs", () => {
     assert.deepEqual(errorFields({ ...GOOD, tier: "1.5" }), ["tier"]);
   });
 
-  it("rejects bet id 0 — ids start at 1, so 0 means 'no bet'", () => {
+  it("rejects bet id 0 - ids start at 1, so 0 means 'no bet'", () => {
     assert.deepEqual(errorFields({ ...GOOD, betId: "0" }), ["betId"]);
   });
 
@@ -105,7 +105,7 @@ describe("verifyQueryParams", () => {
     assert.deepEqual(reparsed.inputs, parsed.inputs);
   });
 
-  it("produces a link that verifies — the promise a share link makes", () => {
+  it("produces a link that verifies - the promise a share link makes", () => {
     const parsed = parseVerifyInputs(GOOD);
     assert.equal(parsed.ok, true);
     if (!parsed.ok) return;

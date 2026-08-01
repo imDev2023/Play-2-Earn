@@ -63,7 +63,7 @@ describe("Rushood (RUSH) token", () => {
     it("reverts a raw call to a mint(address,uint256) selector (no such entrypoint)", async () => {
       const { rush, distributor, alice } = await deploy();
       // There is no mint function and no fallback, so a call to the canonical
-      // mint selector cannot dispatch — it reverts at the EVM level.
+      // mint selector cannot dispatch - it reverts at the EVM level.
       const data =
         ethers.id("mint(address,uint256)").slice(0, 10) +
         ethers.AbiCoder.defaultAbiCoder()

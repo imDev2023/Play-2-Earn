@@ -9,7 +9,7 @@ import { ghostButton, hint, label, panel, statusBadge } from "../../lib/ui";
  * The bankroll and the rules it is governed by, side by side.
  *
  * These are the numbers an operator has to trust before touching anything else, so
- * every one is read from the contract that enforces it — and anything that has not
+ * every one is read from the contract that enforces it - and anything that has not
  * loaded shows as "…" rather than as a plausible zero.
  */
 
@@ -50,7 +50,7 @@ export function TreasuryPanel(props: TreasuryPanelProps) {
         </strong>
         {belowFloor && (
           <span data-testid="below-floor" style={warn}>
-            below floor — the game rejects new bets
+            below floor - the game rejects new bets
           </span>
         )}
       </div>
@@ -63,7 +63,7 @@ export function TreasuryPanel(props: TreasuryPanelProps) {
           name="Profit above floor"
           value={headroom !== undefined ? `${formatRush(headroom)} RUSH` : "…"}
         >
-          Discretionary — this is what the profit-burn may destroy.
+          Discretionary - this is what the profit-burn may destroy.
         </Stat>
         <Stat name="Max payout" value={maxPayout !== undefined ? `${formatRush(maxPayout)} RUSH` : "…"}>
           The most any single win can cost:{" "}
@@ -105,7 +105,7 @@ export function TreasuryPanel(props: TreasuryPanelProps) {
       </div>
       <p style={hint}>
         The economics lock is the #22 opt-in: while it is off, the edge, cap, minimum bet and
-        floor are immutable — a queued change to any of them reverts on execution.
+        floor are immutable - a queued change to any of them reverts on execution.
       </p>
     </section>
   );

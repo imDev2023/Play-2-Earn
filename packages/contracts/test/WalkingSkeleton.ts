@@ -24,7 +24,7 @@ function seedForOutcome(reveal: string, wantWin: boolean, betId = 1n): bigint {
   );
 }
 
-describe("Walking skeleton — Treasury + RushoodGame", () => {
+describe("Walking skeleton - Treasury + RushoodGame", () => {
   async function deploy() {
     const [deployer, player, relayer, outsider] = await ethers.getSigners();
 

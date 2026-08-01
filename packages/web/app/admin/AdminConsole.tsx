@@ -34,7 +34,7 @@ import { chip, ghostButton, hint, label, panel } from "../../lib/ui";
 /**
  * The admin / treasury console (#25).
  *
- * Gated to whoever actually holds the roles on-chain — which is a question the page
+ * Gated to whoever actually holds the roles on-chain - which is a question the page
  * asks the contracts rather than a list it is configured with. Everything sensitive
  * routes through the timelock so that a parameter change is public before it lands;
  * the emergency pause deliberately does not, because a delay on the stop button defeats
@@ -199,7 +199,7 @@ export function AdminConsole() {
         <span style={label}>Operator sign-in</span>
         <p style={{ margin: 0, color: "var(--muted)" }}>
           Connect the multisig (or, before the governance handoff, the deployer key) to open the
-          console. Roles are read from the contracts — connecting proves nothing on its own.
+          console. Roles are read from the contracts - connecting proves nothing on its own.
         </p>
         <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
           {connectors.map((connector) => (

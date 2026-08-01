@@ -11,15 +11,15 @@ import { hint, label, panel, statusBadge, tonedButton } from "../../lib/ui";
  * The timelock's pending queue.
  *
  * This is the page's real accountability surface: what has been queued, what it will do
- * in plain language, when it becomes executable, and — for anything this console did
- * not build — an honest "unrecognised" rather than a confident-looking mislabel.
+ * in plain language, when it becomes executable, and - for anything this console did
+ * not build - an honest "unrecognised" rather than a confident-looking mislabel.
  */
 
 export interface QueuePanelProps {
   operations: QueuedOperation[];
   /** Chain time, for the countdowns. */
   now?: bigint;
-  /** The queue could not be read at all — not the same as an empty queue. */
+  /** The queue could not be read at all - not the same as an empty queue. */
   unavailable?: boolean;
   canExecute: boolean;
   canCancel: boolean;
@@ -46,7 +46,7 @@ export function QueuePanel(props: QueuePanelProps) {
 
       {props.unavailable ? (
         <p data-testid="queue-unavailable" style={{ ...hint, color: "var(--hot)" }}>
-          Could not read the timelock&apos;s queue — the node refused the log query. Treat this as
+          Could not read the timelock&apos;s queue - the node refused the log query. Treat this as
           unknown, not empty: there may be changes already waiting to execute.
         </p>
       ) : props.operations.length === 0 ? (
@@ -100,7 +100,7 @@ function Operation({
         <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
           {op.description
             ? op.description.detail
-            : `calldata ${op.data.slice(0, 10)}… — not an operation this console builds`}
+            : `calldata ${op.data.slice(0, 10)}… - not an operation this console builds`}
         </span>
         <span className="mono" style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
           {shortAddress(op.id)} · target {shortAddress(op.target)}

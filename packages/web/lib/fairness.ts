@@ -5,7 +5,7 @@ import type { BetEntry } from "./useBetHistory";
  * Links into the public `/verify` tool.
  *
  * A verify link carries every input in the URL, so it verifies for anyone who opens it
- * — no wallet, no lookup, no trusting this app's RPC. The query is built by
+ * - no wallet, no lookup, no trusting this app's RPC. The query is built by
  * `@rushood/verifier`, the same module that parses it, so a link the app produces is
  * guaranteed to be readable by the `/verify` page and by the CLI
  * (`npm run verify -- --url "…"`).
@@ -13,7 +13,7 @@ import type { BetEntry } from "./useBetHistory";
 
 /**
  * The verifier inputs for a bet, or null when the chain hasn't supplied enough of them
- * yet — a freshly-placed bet before its record has been read back, or one still
+ * yet - a freshly-placed bet before its record has been read back, or one still
  * awaiting the reveal.
  *
  * The rename across this boundary is deliberate: the contract's storage names are
@@ -42,7 +42,7 @@ export function verifyHref(inputs: VerifyInputs): string {
   return `/verify?${verifyQueryParams(inputs).toString()}`;
 }
 
-/** Treat the zero word as "absent" — an unconsumed reveal slot reads as 0x00…0. */
+/** Treat the zero word as "absent" - an unconsumed reveal slot reads as 0x00…0. */
 export function isZeroHex(value: string): boolean {
   return /^0x0*$/.test(value);
 }

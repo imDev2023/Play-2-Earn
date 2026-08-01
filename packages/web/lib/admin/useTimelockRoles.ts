@@ -12,7 +12,7 @@ import { successValue } from "./readResult";
  * The timelock is found, not configured: the console asks the address that actually
  * holds `governance` whether it answers `getMinDelay()`. A timelock named in an env var
  * but not holding the role would let an operator queue changes that revert on
- * execution, days later — so the address that governs is the only one worth asking.
+ * execution, days later - so the address that governs is the only one worth asking.
  */
 
 const REFRESH_MS = 15_000;

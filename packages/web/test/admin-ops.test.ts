@@ -17,7 +17,7 @@ import { GAME_ABI } from "../lib/contracts";
  *
  * Validation mirrors the contract's own bounds deliberately. A queued change waits out
  * the timelock delay before the chain gets to reject it, so a value the game can never
- * accept has to be caught here — two days before it would otherwise surface as a
+ * accept has to be caught here - two days before it would otherwise surface as a
  * reverted execution.
  */
 
@@ -159,7 +159,7 @@ describe("encodeAdminOp", () => {
     }
   });
 
-  it("keeps setEdge's argument order — a flipped num/den is a payout bug", () => {
+  it("keeps setEdge's argument order - a flipped num/den is a payout bug", () => {
     const data = encodeAdminOp("setEdge", [95n, 100n]);
     const decoded = decodeFunctionData({ abi: GAME_ABI, data });
     assert.deepEqual([...(decoded.args ?? [])], [95n, 100n]);
@@ -229,7 +229,7 @@ describe("preflightAdminOp", () => {
   });
 
   it("warns when a profit-burn exceeds the headroom above the treasury floor", () => {
-    // The floor is the solvency reserve the payout cap depends on — the contract will
+    // The floor is the solvency reserve the payout cap depends on - the contract will
     // not let it be burned away, so say so before the delay is spent.
     const warnings = preflightAdminOp("burnTreasuryProfit", [parseUnits("6000", 18)], state);
     assert.equal(warnings.length, 1);

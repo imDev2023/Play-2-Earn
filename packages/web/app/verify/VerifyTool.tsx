@@ -24,7 +24,7 @@ import { isZeroHex } from "../../lib/fairness";
  * - **Paste the inputs** (or open a verify link, which carries them all in the URL).
  *   Everything happens locally; this page could be served from a hostile host and the
  *   verdict would still be trustworthy, because the only thing it does is arithmetic.
- * - **Look the bet up on-chain** — a convenience that reads `bets(betId)` through this
+ * - **Look the bet up on-chain** - a convenience that reads `bets(betId)` through this
  *   app's RPC. Faster, but you're taking that RPC's word for the inputs. It's clearly
  *   marked as such, because the whole point of this page is not having to.
  */
@@ -57,7 +57,7 @@ const INPUTS: { field: keyof Fields; title: string; hint: string; placeholder: s
   {
     field: "commitment",
     title: "The house's commitment",
-    hint: "The chain head your bet was locked against — published before the bet.",
+    hint: "The chain head your bet was locked against - published before the bet.",
     placeholder: "0x…",
   },
   {
@@ -144,7 +144,7 @@ export function VerifyTool() {
         state: "idle",
         message: settled
           ? undefined
-          : `Bet #${betId} hasn't settled yet — there's no reveal to check.`,
+          : `Bet #${betId} hasn't settled yet - there's no reveal to check.`,
       });
       run(next);
     } catch (err) {
@@ -170,7 +170,7 @@ export function VerifyTool() {
           >
             {TIERS.map((t, i) => (
               <option key={t.odds} value={i}>
-                {t.label} — 1-in-{t.odds}
+                {t.label} · 1-in-{t.odds}
               </option>
             ))}
           </select>
@@ -205,7 +205,7 @@ export function VerifyTool() {
           </button>
         </div>
         <p style={hint}>
-          Verifying is offline. Looking a bet up is not — it reads{" "}
+          Verifying is offline. Looking a bet up is not - it reads{" "}
           <code className="mono">bets(betId)</code> through this app&apos;s node, so you
           are trusting that node for the <em>inputs</em>. Read them off a block explorer
           instead if you&apos;d rather not.
@@ -247,7 +247,7 @@ function Result({ verdict, fields }: { verdict: Verdict; fields: Fields }) {
           data-testid="verify-verdict"
           style={{ fontSize: "1.2rem", color: verdict.ok ? "var(--win)" : "var(--hot)" }}
         >
-          {verdict.ok ? "PASS — this roll checks out" : "FAIL — this roll does not check out"}
+          {verdict.ok ? "PASS - this roll checks out" : "FAIL - this roll does not check out"}
         </strong>
         <span className="mono" style={chip}>
           1-in-{computed.odds.toString()} · {multiplierLabel(tier)}
@@ -276,7 +276,7 @@ function Result({ verdict, fields }: { verdict: Verdict; fields: Fields }) {
             {computed.win ? "WIN" : "LOSS"}
           </strong>
         </span>
-        <span style={hint}>A win is a roll of exactly 0 — a 1-in-{computed.odds.toString()} event.</span>
+        <span style={hint}>A win is a roll of exactly 0 - a 1-in-{computed.odds.toString()} event.</span>
       </div>
 
       {(fields.roll.trim() !== "" || fields.win.trim() !== "") && (

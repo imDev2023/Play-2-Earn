@@ -82,7 +82,7 @@ export const isLocalChain = activeChain.id === hardhat.id;
  * Where a player without gas is sent. On a real chain this is a bridge/faucet;
  * locally there's nothing to bridge, so callers hide the prompt (see isLocalChain).
  *
- * Returns null when there is nowhere real to send them — mainnet without a configured
+ * Returns null when there is nowhere real to send them - mainnet without a configured
  * bridge URL. Callers hide the link rather than offering one that goes nowhere: a dead
  * "Get ETH for gas" link is worse than no link, because a player who clicks it
  * concludes the app is broken rather than that they need to bridge some other way.

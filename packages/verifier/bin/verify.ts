@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `rushood-verify` — check a RUSHOOD roll from the command line.
+ * `rushood-verify` - check a RUSHOOD roll from the command line.
  *
  * The point of this file is that you don't have to trust rushood's website to
  * believe a result. It talks to nothing: give it the numbers the chain published
@@ -107,12 +107,12 @@ function main(argv: string[]): number {
   const verdict = verifyRoll(inputs);
   const { computed } = verdict;
 
-  console.log(`bet #${inputs.betId} — 1-in-${computed.odds} (${multiplierLabel(inputs.tier)})`);
+  console.log(`bet #${inputs.betId} - 1-in-${computed.odds} (${multiplierLabel(inputs.tier)})`);
   console.log("");
   console.log("  hash-chain link");
   console.log(`    commitment claimed   ${inputs.commitment}`);
   console.log(`    keccak256(reveal)    ${commitmentFor(inputs.serverReveal)}`);
-  console.log(`    ${verdict.commitmentValid ? "MATCH — the server revealed what it committed to" : "MISMATCH — this reveal is not the committed one"}`);
+  console.log(`    ${verdict.commitmentValid ? "MATCH - the server revealed what it committed to" : "MISMATCH - this reveal is not the committed one"}`);
   console.log("");
   console.log("  the draw");
   console.log(`    keccak256(reveal, clientEntropy, betId)`);
@@ -132,10 +132,10 @@ function main(argv: string[]): number {
 
   console.log("");
   if (verdict.ok) {
-    console.log("PASS — this roll is exactly what the published inputs produce.");
+    console.log("PASS - this roll is exactly what the published inputs produce.");
     return 0;
   }
-  console.log(`FAIL — ${verdict.failures.join(", ")}`);
+  console.log(`FAIL - ${verdict.failures.join(", ")}`);
   return 1;
 }
 

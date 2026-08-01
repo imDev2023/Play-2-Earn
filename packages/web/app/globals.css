@@ -2,7 +2,7 @@
  * RUSHOOD visual system. Dark "betting terminal" base with a cool→hot risk
  * gradient: safe tiers read cyan, the moonshot burns magenta/gold. Figures are
  * monospace (tabular) throughout; prose is a clean grotesk. The one loud moment
- * is the settlement reveal — everything else stays quiet.
+ * is the settlement reveal - everything else stays quiet.
  */
 :root {
   --ink: #0b0e17;
@@ -55,7 +55,7 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* Ambient pull on the moonshot rung — it should feel like it's beckoning. */
+/* Ambient pull on the moonshot rung - it should feel like it's beckoning. */
 @keyframes moon-pulse {
   0%,
   100% {

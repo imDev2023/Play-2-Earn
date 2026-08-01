@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { formatDuration, shortAddress } from "../lib/admin/format";
 
 /**
- * Timelock delays are quoted in seconds on-chain and read as nonsense there — "172800"
+ * Timelock delays are quoted in seconds on-chain and read as nonsense there - "172800"
  * tells an operator nothing about whether a change lands tomorrow or next week.
  */
 
@@ -43,6 +43,6 @@ describe("shortAddress", () => {
   });
 
   it("renders a missing address as a dash", () => {
-    assert.equal(shortAddress(undefined), "—");
+    assert.equal(shortAddress(undefined), "-");
   });
 });

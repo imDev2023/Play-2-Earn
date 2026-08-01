@@ -3,7 +3,7 @@
  *
  * The whole supply is minted once to the deployer and then split across five buckets.
  * Shares are expressed in basis points and amounts derived with integer maths, so the
- * five buckets sum to exactly MAX_SUPPLY with no dust left behind — an invariant the
+ * five buckets sum to exactly MAX_SUPPLY with no dust left behind - an invariant the
  * tests assert rather than assume.
  */
 
@@ -29,7 +29,7 @@ export interface GenesisShare {
 /**
  * Spec §3. Percentages are locked by the spec; only the destinations vary by network.
  *
- * The liquidity bucket is the one that does not go to a contract directly — it is held
+ * The liquidity bucket is the one that does not go to a contract directly - it is held
  * by the deployer just long enough to seed the Uniswap pool, after which the resulting
  * position NFT is locked in RushoodLPLock.
  */
@@ -57,7 +57,7 @@ export function allocations(totalSupply: bigint = MAX_SUPPLY): Record<GenesisBuc
 }
 
 /**
- * Total across all buckets. Must equal `totalSupply` — if it ever doesn't, the split
+ * Total across all buckets. Must equal `totalSupply` - if it ever doesn't, the split
  * is leaving tokens stranded on the deployer and the deployment should abort.
  */
 export function allocationTotal(totalSupply: bigint = MAX_SUPPLY): bigint {
@@ -81,7 +81,7 @@ export interface TransferableToken {
  * Transfer the genesis allocation from the distributor to its five destinations.
  *
  * Aborts before moving anything if the split wouldn't consume the supply exactly, or if
- * the distributor doesn't hold the whole supply — a partial genesis distribution is far
+ * the distributor doesn't hold the whole supply - a partial genesis distribution is far
  * harder to unwind than a failed one, and on mainnet it is unrecoverable.
  *
  * @returns The amount sent to each bucket.

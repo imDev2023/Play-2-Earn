@@ -2,7 +2,7 @@ import type { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 
 /**
- * Robinhood Chain (Arbitrum Orbit L2) is the production target — see the spec.
+ * Robinhood Chain (Arbitrum Orbit L2) is the production target - see the spec.
  * Networks are wired here but left keyless in the scaffold; later tickets add
  * deploy config + secrets. Chain IDs: mainnet 4663, testnet 46630.
  */
@@ -11,7 +11,7 @@ import "@nomicfoundation/hardhat-toolbox";
  * Accounts for a public network.
  *
  * The launch checklist (#26) needs *distinct* addresses for deployer, relayer, player
- * and guardian — running them all from one key would let access-control checks pass
+ * and guardian - running them all from one key would let access-control checks pass
  * for the wrong reason. `TESTNET_PRIVATE_KEYS` takes a comma-separated list; a single
  * `DEPLOYER_PRIVATE_KEY` still works for deploy-only runs.
  */

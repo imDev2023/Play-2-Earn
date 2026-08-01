@@ -12,14 +12,14 @@ import { successValue } from "./readResult";
 /**
  * The timelock's operation queue, rebuilt from its own logs.
  *
- * A queued change is not a thing this app remembers — it lives on-chain, was probably
+ * A queued change is not a thing this app remembers - it lives on-chain, was probably
  * queued from a different browser, and will be executed days later by someone else. So
  * the queue is reconstructed from `CallScheduled` (what is being called) joined with
  * `CallSalt` (the salt `execute` needs, which `CallScheduled` does not carry), and each
  * operation's live state is read back from the timelock rather than inferred from the
  * delay that was requested.
  *
- * Like the player-facing history, this reads logs directly rather than an indexer —
+ * Like the player-facing history, this reads logs directly rather than an indexer -
  * ample for a console watching one contract's governance traffic.
  */
 
@@ -118,7 +118,7 @@ export function useTimelockQueue(timelock?: Address): TimelockQueue {
         setScheduled(operations);
       } catch {
         // No node, or a provider that won't serve a full-range log query. Say the queue
-        // is unreadable rather than let it render as empty — an operator who believes
+        // is unreadable rather than let it render as empty - an operator who believes
         // nothing is pending will re-queue a change that is already waiting.
         if (!cancelled) setUnavailable(true);
       } finally {
