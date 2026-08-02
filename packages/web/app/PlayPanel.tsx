@@ -4,8 +4,6 @@ import { useState, type CSSProperties } from "react";
 import { formatUnits, parseUnits } from "viem";
 import {
   useAccount,
-  useChainId,
-  useConnect,
   useDisconnect,
   useReadContract,
   useWatchContractEvent,
@@ -13,7 +11,7 @@ import {
 } from "wagmi";
 import { readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../lib/wagmi";
-import { ACTIVE_CHAIN_ID } from "../lib/chain";
+import { isWrongNetwork } from "../lib/chain";
 import {
   EDGE_DEN,
   EDGE_NUM,
@@ -27,6 +25,8 @@ import {
 import { useBetHistory } from "../lib/useBetHistory";
 import { betBlock, betBlockMessage } from "../lib/bet-validity";
 import { approvalAmount, betsCovered } from "../lib/approval";
+import { connectLabel } from "../lib/connectors";
+import { useWalletConnector } from "../lib/useWalletConnector";
 import { readableError } from "../lib/errors";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
@@ -51,9 +51,13 @@ function randomSeed(): bigint {
 }
 
 export function PlayPanel() {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  const { connect, connectors } = useConnect();
+  // `chainId` here is the connection's own chain. `useChainId` reports the config's
+  // selected chain instead, which wagmi refuses to move to a chain it was not
+  // configured with - so it answered ACTIVE_CHAIN_ID however far away the wallet
+  // really was, and `wrongNetwork` below was unreachable. See NetworkOnboarding.
+  const { address, isConnected, chainId } = useAccount();
+  // One button, whichever wallet the player has. See lib/connectors.
+  const { wallet, ready: walletReady, connectWallet } = useWalletConnector();
   const { disconnect } = useDisconnect();
   const { writeContractAsync: writeAsync } = useWriteContract();
 
@@ -69,7 +73,7 @@ export function PlayPanel() {
   // the player is being asked to approve rather than leave them to read the hex.
   const [approvalBets, setApprovalBets] = useState(0);
 
-  const wrongNetwork = isConnected && chainId !== ACTIVE_CHAIN_ID;
+  const wrongNetwork = isConnected && isWrongNetwork(chainId);
 
   const { history } = useBetHistory(address);
 
@@ -207,16 +211,26 @@ export function PlayPanel() {
             Connect a wallet to pick your odds and take a shot at the moonshot.
           </p>
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            {connectors.map((connector) => (
+            {!walletReady || wallet ? (
               <button
-                key={connector.uid}
-                data-testid={`connect-${connector.type}`}
+                data-testid="connect-wallet"
                 style={ghostButton}
-                onClick={() => connect({ connector })}
+                disabled={!walletReady}
+                onClick={connectWallet}
               >
-                Connect {connector.name}
+                {walletReady ? connectLabel(wallet) : "Connect wallet"}
               </button>
-            ))}
+            ) : (
+              <a
+                data-testid="install-wallet"
+                href="https://ethereum.org/en/wallets/find-wallet/"
+                target="_blank"
+                rel="noreferrer"
+                style={ghostButton}
+              >
+                Get an EVM wallet →
+              </a>
+            )}
           </div>
         </section>
         <section style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>

@@ -128,7 +128,52 @@ export function uniswapSwapUrl(rush: Address, chainId: number = ACTIVE_CHAIN_ID)
   return `${base}?${params.toString()}`;
 }
 
+/**
+ * Chains RUSHOOD does not run on, but that players arrive from.
+ *
+ * The wrong-network banner reads "You're on {label}", and the label has one job: to
+ * match what the player can see in their own wallet, so the two screens agree about
+ * where they are. "Chain 1" fails that against a MetaMask reading "Ethereum".
+ *
+ * Deliberately short. This is not a chain registry - it covers the networks a wallet
+ * is plausibly sitting on when it lands here, and anything else still degrades to the
+ * id, which is at least unambiguous.
+ */
+const VISITING_CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum",
+  10: "OP Mainnet",
+  56: "BNB Smart Chain",
+  137: "Polygon",
+  8453: "Base",
+  42161: "Arbitrum One",
+  11155111: "Sepolia",
+};
+
+/**
+ * Is a connected wallet somewhere it cannot play?
+ *
+ * Shared rather than written out at each call site because two places depend on it -
+ * the banner that offers the switch, and the bet button that has to be disabled while
+ * it is showing. If those two ever disagreed the result is the failure this replaced:
+ * a live-looking bet button on the wrong chain.
+ *
+ * `undefined` is not a wrong network. It is the gap before the connection reports a
+ * chain, and treating it as wrong would flash "Switch network to play" at players who
+ * are on exactly the right one.
+ *
+ * Narrowing to `number` follows from that: a caller inside the wrong-network branch is
+ * holding a chain id the wallet has actually reported, and can name it without a
+ * fallback for a case this function has already excluded.
+ */
+export function isWrongNetwork(chainId: number | undefined): chainId is number {
+  return chainId !== undefined && chainId !== ACTIVE_CHAIN_ID;
+}
+
 /** Short, human label for a chain id (for status chips). */
 export function chainLabel(chainId: number): string {
-  return CHAINS.find((c) => c.id === chainId)?.name ?? `Chain ${chainId}`;
+  return (
+    CHAINS.find((c) => c.id === chainId)?.name ??
+    VISITING_CHAIN_NAMES[chainId] ??
+    `Chain ${chainId}`
+  );
 }

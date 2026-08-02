@@ -2,12 +2,14 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import type { Address, Hex } from "viem";
-import { useAccount, useBlock, useConnect, useDisconnect, useWriteContract } from "wagmi";
+import { useAccount, useBlock, useDisconnect, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../../lib/wagmi";
 import { GAME_ABI, GAME_ADDRESS } from "../../lib/contracts";
 import { NO_PREDECESSOR, TIMELOCK_ABI, randomSalt } from "../../lib/timelock";
 import { readableError } from "../../lib/errors";
+import { connectLabel } from "../../lib/connectors";
+import { useWalletConnector } from "../../lib/useWalletConnector";
 import { operatorAccess } from "../../lib/admin/access";
 import {
   adminOp,
@@ -42,10 +44,13 @@ import { chip, ghostButton, hint, label, panel } from "../../lib/ui";
  */
 export function AdminConsole() {
   const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const { writeContractAsync } = useWriteContract();
   const { data: block } = useBlock({ watch: true });
+
+  // Same single-wallet choice the play page makes, for the same reason: an operator
+  // signing a timelock operation should be in no doubt which wallet is about to open.
+  const { wallet, ready: walletReady, connectWallet } = useWalletConnector();
 
   const game = useGameAdmin();
   const timelock = useTimelockRoles(game.governance, address);
@@ -202,16 +207,20 @@ export function AdminConsole() {
           console. Roles are read from the contracts - connecting proves nothing on its own.
         </p>
         <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-          {connectors.map((connector) => (
+          {!walletReady || wallet ? (
             <button
-              key={connector.uid}
-              data-testid={`connect-${connector.type}`}
+              data-testid="connect-wallet"
               style={ghostButton}
-              onClick={() => connect({ connector })}
+              disabled={!walletReady}
+              onClick={connectWallet}
             >
-              Connect {connector.name}
+              {walletReady ? connectLabel(wallet) : "Connect wallet"}
             </button>
-          ))}
+          ) : (
+            <span data-testid="no-wallet" style={hint}>
+              No EVM wallet detected in this browser.
+            </span>
+          )}
         </div>
       </section>
     );
