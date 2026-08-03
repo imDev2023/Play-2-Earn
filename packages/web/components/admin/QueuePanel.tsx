@@ -23,6 +23,8 @@ export interface QueuePanelProps {
   unavailable?: boolean;
   canExecute: boolean;
   canCancel: boolean;
+  /** The wallet is on a chain this deployment does not live on, so nothing can sign. */
+  wrongNetwork: boolean;
   busyId?: string;
   onExecute: (op: QueuedOperation) => void;
   onCancel: (op: QueuedOperation) => void;
@@ -69,6 +71,7 @@ function Operation({
   now,
   canExecute,
   canCancel,
+  wrongNetwork,
   busyId,
   onExecute,
   onCancel,
@@ -114,8 +117,8 @@ function Operation({
           {op.status === "ready" && (
             <button
               data-testid="op-execute"
-              style={compact(tonedButton("var(--cool)", !canExecute || busy))}
-              disabled={!canExecute || busy}
+              style={compact(tonedButton("var(--cool)", !canExecute || wrongNetwork || busy))}
+              disabled={!canExecute || wrongNetwork || busy}
               onClick={() => onExecute(op)}
             >
               {busy ? "…" : "Execute"}
@@ -123,8 +126,8 @@ function Operation({
           )}
           <button
             data-testid="op-cancel"
-            style={compact(tonedButton("var(--hot)", !canCancel || busy))}
-            disabled={!canCancel || busy}
+            style={compact(tonedButton("var(--hot)", !canCancel || wrongNetwork || busy))}
+            disabled={!canCancel || wrongNetwork || busy}
             onClick={() => onCancel(op)}
           >
             Cancel

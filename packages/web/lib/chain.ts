@@ -75,6 +75,17 @@ export const ACTIVE_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? hardha
 /** The active chain's full definition (falls back to Hardhat if the id is unknown). */
 export const activeChain = CHAINS.find((c) => c.id === ACTIVE_CHAIN_ID) ?? hardhat;
 
+/**
+ * The same id, typed as one of the chains wagmi is actually configured with.
+ *
+ * `ACTIVE_CHAIN_ID` comes from the environment and so is only a `number`, which wagmi's
+ * typed config will not accept. Every call that has to name a chain - a read that must
+ * not follow the wallet elsewhere, a write that must not land on the wrong chain - uses
+ * this, so none of them needs a cast, and an id the app was never configured with is
+ * resolved once here rather than at each call site.
+ */
+export const activeChainId = activeChain.id;
+
 /** True when the app is targeting a local dev node rather than a public chain. */
 export const isLocalChain = activeChain.id === hardhat.id;
 
@@ -129,17 +140,21 @@ export function uniswapSwapUrl(rush: Address, chainId: number = ACTIVE_CHAIN_ID)
 }
 
 /**
- * Chains RUSHOOD does not run on, but that players arrive from.
+ * Every chain id this app can put a name to.
  *
- * The wrong-network banner reads "You're on {label}", and the label has one job: to
- * match what the player can see in their own wallet, so the two screens agree about
- * where they are. "Chain 1" fails that against a MetaMask reading "Ethereum".
+ * Two kinds of entry, one table. `CHAINS` are the chains RUSHOOD runs on, and their
+ * names come from the definitions above so the two can never disagree. The literals
+ * after them are chains RUSHOOD does not run on but that players arrive from: the
+ * wrong-network banner reads "You're on {label}", and the label has one job, which is
+ * to match what the player can see in their own wallet. "Chain 1" fails that against a
+ * MetaMask reading "Ethereum".
  *
- * Deliberately short. This is not a chain registry - it covers the networks a wallet
- * is plausibly sitting on when it lands here, and anything else still degrades to the
- * id, which is at least unambiguous.
+ * The visiting entries are deliberately few. This is not a chain registry - it covers
+ * the networks a wallet is plausibly sitting on when it lands here, and anything else
+ * still degrades to the id, which is at least unambiguous.
  */
-const VISITING_CHAIN_NAMES: Record<number, string> = {
+const CHAIN_NAMES: Record<number, string> = {
+  ...Object.fromEntries(CHAINS.map((c) => [c.id, c.name])),
   1: "Ethereum",
   10: "OP Mainnet",
   56: "BNB Smart Chain",
@@ -171,9 +186,5 @@ export function isWrongNetwork(chainId: number | undefined): chainId is number {
 
 /** Short, human label for a chain id (for status chips). */
 export function chainLabel(chainId: number): string {
-  return (
-    CHAINS.find((c) => c.id === chainId)?.name ??
-    VISITING_CHAIN_NAMES[chainId] ??
-    `Chain ${chainId}`
-  );
+  return CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
 }

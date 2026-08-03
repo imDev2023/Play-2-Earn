@@ -1,7 +1,12 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 
-import { chooseConnector, connectLabel, type WalletConnector } from "../lib/connectors";
+import {
+  chooseConnector,
+  connectLabel,
+  orderedConnectors,
+  type WalletConnector,
+} from "../lib/connectors";
 
 /**
  * Which wallet the one connect button uses.
@@ -20,8 +25,8 @@ const coinbase: WalletConnector = { id: "com.coinbase.wallet", name: "Coinbase W
 const generic: WalletConnector = { id: "injected", name: "Injected", type: "injected" };
 const dev: WalletConnector = { id: "mock", name: "Mock Connector", type: "mock" };
 
-const WITH_PROVIDER = { hasInjectedProvider: true };
-const WITHOUT_PROVIDER = { hasInjectedProvider: false };
+const WITH_PROVIDER = true;
+const WITHOUT_PROVIDER = false;
 
 describe("chooseConnector", () => {
   it("prefers a discovered wallet over the generic injected entry for the same wallet", () => {
@@ -81,8 +86,33 @@ describe("connectLabel", () => {
   it("says plainly that the test wallet is not a real one", () => {
     assert.equal(connectLabel(dev), "Connect test wallet");
   });
+});
 
-  it("has a label for having nothing to connect to", () => {
-    assert.equal(connectLabel(undefined), "No wallet detected");
+describe("orderedConnectors", () => {
+  it("offers the other installed wallets after the one it leads with", () => {
+    // Leading with MetaMask is a default, not a restriction: the spec asks for
+    // "connectors (MetaMask etc.)", and somebody who keeps two wallets and prefers the
+    // other one needs a way through that is not uninstalling it.
+    const ordered = orderedConnectors([rabby, metaMask, coinbase, generic], WITH_PROVIDER);
+    assert.deepEqual(
+      ordered.map((c) => c.name),
+      ["MetaMask", "Coinbase Wallet", "Rabby"],
+    );
+  });
+
+  it("never offers a second route to the same wallet", () => {
+    // The generic injected entry reaches whatever announced itself, so listing it as an
+    // alternative would set "Injected" beside "MetaMask" and make them look like a
+    // choice. That was half of the three-button bug.
+    assert.deepEqual(orderedConnectors([generic, dev, metaMask], WITH_PROVIDER), [metaMask]);
+  });
+
+  it("offers the test wallet alone, never beside a real one", () => {
+    assert.deepEqual(orderedConnectors([generic, dev], WITHOUT_PROVIDER), [dev]);
+    assert.deepEqual(orderedConnectors([dev, metaMask], WITH_PROVIDER), [metaMask]);
+  });
+
+  it("is empty when there is nothing to connect to", () => {
+    assert.deepEqual(orderedConnectors([generic], WITHOUT_PROVIDER), []);
   });
 });

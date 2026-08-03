@@ -122,6 +122,24 @@ describe("chain metadata", () => {
     assert.equal(chain.chainLabel(42161), "Arbitrum One");
   });
 
+  it("takes the names of its own chains from their definitions", () => {
+    // One table covers both kinds of chain, and the entries for the chains RUSHOOD runs
+    // on are derived rather than retyped, so a renamed chain cannot end up with the
+    // banner and the rest of the app calling it two different things.
+    for (const c of chain.CHAINS) {
+      assert.equal(chain.chainLabel(c.id), c.name);
+    }
+  });
+
+  it("resolves the active chain id to one the app is configured for", () => {
+    // Writes name this id so a wallet cannot sign somewhere else. An id the app was
+    // never configured with has to be resolved here, not passed to wagmi.
+    assert.equal(
+      chain.CHAINS.some((c) => c.id === chain.activeChainId),
+      true,
+    );
+  });
+
   it("has nowhere to send a local player for gas", () => {
     assert.equal(chain.gasHelpUrl(31337), null);
   });

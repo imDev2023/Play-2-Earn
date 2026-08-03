@@ -3,19 +3,16 @@
 import type { CSSProperties } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import {
-  ACTIVE_CHAIN_ID,
   activeChain,
   activeChainConfigError,
+  activeChainId,
   chainLabel,
   gasHelpUrl,
   isLocalChain,
   isWrongNetwork,
 } from "../lib/chain";
-import { wagmiConfig } from "../lib/wagmi";
 import { switchFailureMessage } from "../lib/errors";
 import { ghostButton, linkButton } from "../lib/ui";
-
-type ConfiguredChainId = (typeof wagmiConfig.chains)[number]["id"];
 
 /**
  * Guides a connected player onto the chain RUSHOOD runs on. When the wallet is on
@@ -64,7 +61,7 @@ export function NetworkOnboarding() {
           data-testid="switch-network"
           style={ghostButton}
           disabled={isPending}
-          onClick={() => switchChain({ chainId: ACTIVE_CHAIN_ID as ConfiguredChainId })}
+          onClick={() => switchChain({ chainId: activeChainId })}
         >
           {isPending ? "Switching…" : `Switch to ${activeChain.name}`}
         </button>
