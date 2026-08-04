@@ -40,3 +40,73 @@ jobs:
 
       - name: Web E2E tests
         run: npm test --workspace @rushood/web
+
+  # The connected path needs the opposite world from the job above: a running chain
+  # with the contracts deployed and the relayer settling, where `build-and-test`'s
+  # admin specs assert the chain is unreachable. Separate job rather than more steps,
+  # so neither suite can be run against the wrong stack.
+  connected-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npm run build --workspace @rushood/contracts
+
+      - name: Start the chain
+        run: npm run node --workspace @rushood/contracts > /tmp/hardhat-node.log 2>&1 &
+
+      - name: Wait for the chain
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf -X POST -H 'Content-Type: application/json' \
+              --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+              http://127.0.0.1:8545 > /dev/null; then
+              echo "chain up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "chain never came up"; cat /tmp/hardhat-node.log; exit 1
+
+      - name: Mine on an interval
+        run: |
+          rpc() { curl -sf -X POST -H 'Content-Type: application/json' --data "$1" http://127.0.0.1:8545; }
+          rpc '{"jsonrpc":"2.0","method":"evm_setAutomine","params":[true],"id":1}'
+          rpc '{"jsonrpc":"2.0","method":"evm_setIntervalMining","params":[2000],"id":1}'
+
+      - name: Deploy the skeleton
+        run: npm run deploy:skeleton --workspace @rushood/contracts
+
+      # No RELAYER_SEED, so both the deploy and the relayer use the same default
+      # master seed and the hashchain the relayer reveals matches the genesis
+      # commitment the game was deployed with.
+      - name: Start the relayer
+        run: npm run relayer --workspace @rushood/contracts > /tmp/relayer.log 2>&1 &
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: packages/web
+
+      - name: Connected E2E tests
+        run: npm run test:connected --workspace @rushood/web
+
+      - name: Stack logs on failure
+        if: failure()
+        run: |
+          echo "--- hardhat node ---"; tail -100 /tmp/hardhat-node.log || true
+          echo "--- relayer ---"; tail -100 /tmp/relayer.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: connected-e2e-traces
+          path: packages/web/test-results/
+          retention-days: 7
