@@ -14,7 +14,7 @@ test("hero states the pitch: pick your odds, up to 950x", async ({ page }) => {
 test("disconnected state prompts a wallet connection", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("Get in the game")).toBeVisible();
-  await expect(page.getByTestId("connect-mock")).toBeVisible();
+  await expect(page.getByTestId("connect-wallet")).toBeVisible();
 });
 
 test("the odds ladder features the moonshot at the top and the coin flip at the base", async ({

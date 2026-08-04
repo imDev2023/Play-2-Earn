@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import { activeChain } from "../../lib/chain";
 import { hint, label, panel, statusBadge, tonedButton } from "../../lib/ui";
 
 /**
@@ -15,12 +16,21 @@ import { hint, label, panel, statusBadge, tonedButton } from "../../lib/ui";
 export interface EmergencyPanelProps {
   paused?: boolean;
   canPause: boolean;
+  /** The wallet is on a chain this deployment does not live on, so nothing can sign. */
+  wrongNetwork: boolean;
   busy: boolean;
   onToggle: (next: boolean) => void;
 }
 
-export function EmergencyPanel({ paused, canPause, busy, onToggle }: EmergencyPanelProps) {
+export function EmergencyPanel({
+  paused,
+  canPause,
+  wrongNetwork,
+  busy,
+  onToggle,
+}: EmergencyPanelProps) {
   const known = paused !== undefined;
+  const blocked = !canPause || wrongNetwork || !known;
   return (
     <section data-testid="emergency-panel" style={{ ...panel, display: "grid", gap: "0.75rem" }}>
       <header style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
@@ -33,12 +43,12 @@ export function EmergencyPanel({ paused, canPause, busy, onToggle }: EmergencyPa
       <button
         data-testid="pause-toggle"
         style={{
-          ...tonedButton(paused ? "var(--cool)" : "var(--hot)", !canPause || busy || !known),
+          ...tonedButton(paused ? "var(--cool)" : "var(--hot)", blocked || busy),
           padding: "0.7rem 1rem",
           fontSize: "0.95rem",
           fontWeight: 700,
         }}
-        disabled={!canPause || busy || !known}
+        disabled={blocked || busy}
         onClick={() => onToggle(!paused)}
       >
         {busy ? "Confirming…" : paused ? "Resume the game" : "Pause the game"}
@@ -48,11 +58,18 @@ export function EmergencyPanel({ paused, canPause, busy, onToggle }: EmergencyPa
         Pausing halts <strong>new bets only</strong>. Settlement and refunds keep working, so a bet
         already in flight always resolves and no player&apos;s stake is ever stranded by a pause.
       </p>
-      {!canPause && (
+      {!canPause ? (
         <p data-testid="pause-denied" style={{ ...hint, color: "var(--hot)" }}>
           Only the guardian can pause. Connect the guardian account to use this.
         </p>
-      )}
+      ) : wrongNetwork ? (
+        // Distinct from the role message on purpose. The guardian reaching for the stop
+        // button in an emergency needs to be told the one thing standing in their way,
+        // and "you are not the guardian" would send them looking for the wrong problem.
+        <p data-testid="pause-wrong-network" style={{ ...hint, color: "var(--hot)" }}>
+          Your wallet is on another network. Switch to {activeChain.name} to pause.
+        </p>
+      ) : null}
     </section>
   );
 }

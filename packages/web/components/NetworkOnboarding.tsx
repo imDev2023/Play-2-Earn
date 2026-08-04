@@ -1,20 +1,18 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useChainId, useSwitchChain } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import {
-  ACTIVE_CHAIN_ID,
   activeChain,
   activeChainConfigError,
+  activeChainId,
   chainLabel,
   gasHelpUrl,
   isLocalChain,
+  isWrongNetwork,
 } from "../lib/chain";
-import { wagmiConfig } from "../lib/wagmi";
 import { switchFailureMessage } from "../lib/errors";
 import { ghostButton, linkButton } from "../lib/ui";
-
-type ConfiguredChainId = (typeof wagmiConfig.chains)[number]["id"];
 
 /**
  * Guides a connected player onto the chain RUSHOOD runs on. When the wallet is on
@@ -27,11 +25,19 @@ type ConfiguredChainId = (typeof wagmiConfig.chains)[number]["id"];
  * holding it can fix, and a button that silently returns to its resting label leaves
  * them clicking it again forever, which is exactly what a wallet already holding a
  * different network on the same RPC URL produces.
+ *
+ * The chain comes from `useAccount`, not `useChainId`, and the difference is the whole
+ * guard. `useChainId` reports the *config's* selected chain, and wagmi refuses to move
+ * that to a chain it was not configured with - see `createConfig`, "If chain is not
+ * configured, then don't switch over to it". Every chain a player is wrongly on is by
+ * definition one of those, so `useChainId` answered `ACTIVE_CHAIN_ID` no matter where
+ * the wallet actually was and this banner never rendered. `useAccount().chainId` is
+ * the connection's own chain and reports the wallet as it is.
  */
 export function NetworkOnboarding() {
-  const chainId = useChainId();
+  const { isConnected, chainId } = useAccount();
   const { switchChain, isPending, error } = useSwitchChain();
-  const onWrongNetwork = chainId !== ACTIVE_CHAIN_ID;
+  const onWrongNetwork = isConnected && isWrongNetwork(chainId);
 
   if (onWrongNetwork) {
     const failure = error ? switchFailureMessage(error) : null;
@@ -55,7 +61,7 @@ export function NetworkOnboarding() {
           data-testid="switch-network"
           style={ghostButton}
           disabled={isPending}
-          onClick={() => switchChain({ chainId: ACTIVE_CHAIN_ID as ConfiguredChainId })}
+          onClick={() => switchChain({ chainId: activeChainId })}
         >
           {isPending ? "Switching…" : `Switch to ${activeChain.name}`}
         </button>

@@ -2,12 +2,13 @@
 
 import { useMemo, useState, type CSSProperties } from "react";
 import type { Address, Hex } from "viem";
-import { useAccount, useBlock, useConnect, useDisconnect, useWriteContract } from "wagmi";
+import { useAccount, useBlock, useDisconnect, useWriteContract } from "wagmi";
 import { waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../../lib/wagmi";
 import { GAME_ABI, GAME_ADDRESS } from "../../lib/contracts";
 import { NO_PREDECESSOR, TIMELOCK_ABI, randomSalt } from "../../lib/timelock";
 import { readableError } from "../../lib/errors";
+import { activeChain, activeChainId, isWrongNetwork } from "../../lib/chain";
 import { operatorAccess } from "../../lib/admin/access";
 import {
   adminOp,
@@ -24,6 +25,7 @@ import { useTimelockRoles } from "../../lib/admin/useTimelockRoles";
 import { useTimelockQueue, type QueuedOperation } from "../../lib/admin/useTimelockQueue";
 import { useRelayerHealth } from "../../lib/admin/useRelayerHealth";
 import { NetworkOnboarding } from "../../components/NetworkOnboarding";
+import { ConnectWallet } from "../../components/ConnectWallet";
 import { TreasuryPanel } from "../../components/admin/TreasuryPanel";
 import { RelayerHealthPanel } from "../../components/admin/RelayerHealthPanel";
 import { EmergencyPanel } from "../../components/admin/EmergencyPanel";
@@ -41,11 +43,19 @@ import { chip, ghostButton, hint, label, panel } from "../../lib/ui";
  * the point of one.
  */
 export function AdminConsole() {
-  const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
+  const { address, isConnected, chainId } = useAccount();
   const { disconnect } = useDisconnect();
   const { writeContractAsync } = useWriteContract();
   const { data: block } = useBlock({ watch: true });
+
+  // The connection's own chain, not the config's - see NetworkOnboarding for why the
+  // difference is the whole guard. Passed to the panels rather than folded into the
+  // role flags, because "you are on the wrong network" and "you do not hold this role"
+  // are different problems and an operator sent after the wrong one loses time. The console needs it for more than a banner: role
+  // reads go over the app's own transport and succeed wherever the wallet happens to
+  // be, so nothing here would otherwise notice an operator sitting on Ethereum, and
+  // every button would look live. `wrongNetwork` disables them, and `run` refuses.
+  const wrongNetwork = isConnected && isWrongNetwork(chainId);
 
   const game = useGameAdmin();
   const timelock = useTimelockRoles(game.governance, address);
@@ -101,12 +111,21 @@ export function AdminConsole() {
   }, [selected, rawValues, game]);
 
   async function run(id: BusyKey, message: string, send: () => Promise<Hex>) {
+    // The last line of defence. Every caller is already disabled on the wrong network,
+    // but the chain can change between the render that enabled a button and the click
+    // that fires it, and an admin write is not something to leave to the UI being
+    // right. Every send below also names the chain, so a wallet that moved mid-flight
+    // is asked to move back rather than signing somewhere else.
+    if (wrongNetwork) {
+      setFailure(`Switch your wallet to ${activeChain.name} before signing.`);
+      return;
+    }
     setBusy(id);
     setFailure(undefined);
     setNotice(undefined);
     try {
       const hash = await send();
-      await waitForTransactionReceipt(wagmiConfig, { hash });
+      await waitForTransactionReceipt(wagmiConfig, { chainId: activeChainId, hash });
       setNotice(message);
       game.refetch();
       queue.refresh();
@@ -134,6 +153,7 @@ export function AdminConsole() {
         `Queued ${adminOp(selected).label}. Executable in ${formatDuration(delay)}.`,
         () =>
           writeContractAsync({
+            chainId: activeChainId,
             address: timelockAddress,
             abi: TIMELOCK_ABI,
             functionName: "schedule",
@@ -146,6 +166,7 @@ export function AdminConsole() {
     if (access.canChangeParamsDirectly) {
       void run("submit", `${adminOp(selected).label} applied.`, () =>
         writeContractAsync({
+          chainId: activeChainId,
           address: GAME_ADDRESS,
           abi: GAME_ABI,
           functionName: selected,
@@ -160,6 +181,7 @@ export function AdminConsole() {
     if (!timelockAddress) return;
     void run(op.id, `Executed ${op.description?.label ?? "operation"}.`, () =>
       writeContractAsync({
+        chainId: activeChainId,
         address: timelockAddress,
         abi: TIMELOCK_ABI,
         functionName: "execute",
@@ -175,6 +197,7 @@ export function AdminConsole() {
     if (!timelockAddress) return;
     void run(op.id, `Cancelled ${op.description?.label ?? "operation"}.`, () =>
       writeContractAsync({
+        chainId: activeChainId,
         address: timelockAddress,
         abi: TIMELOCK_ABI,
         functionName: "cancel",
@@ -186,6 +209,7 @@ export function AdminConsole() {
   function togglePause(next: boolean) {
     void run("pause", next ? "Game paused." : "Game resumed.", () =>
       writeContractAsync({
+        chainId: activeChainId,
         address: GAME_ADDRESS,
         abi: GAME_ABI,
         functionName: next ? "pause" : "unpause",
@@ -201,18 +225,12 @@ export function AdminConsole() {
           Connect the multisig (or, before the governance handoff, the deployer key) to open the
           console. Roles are read from the contracts - connecting proves nothing on its own.
         </p>
-        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-          {connectors.map((connector) => (
-            <button
-              key={connector.uid}
-              data-testid={`connect-${connector.type}`}
-              style={ghostButton}
-              onClick={() => connect({ connector })}
-            >
-              Connect {connector.name}
-            </button>
-          ))}
-        </div>
+        {/*
+          The same connect step the play page shows, and shared for the same reason it
+          is one button: an operator about to sign a timelock operation should be in no
+          doubt which wallet is going to open.
+        */}
+        <ConnectWallet />
       </section>
     );
   }
@@ -305,6 +323,7 @@ export function AdminConsole() {
         <EmergencyPanel
           paused={game.paused}
           canPause={access.canPause}
+          wrongNetwork={wrongNetwork}
           busy={busy === "pause"}
           onToggle={togglePause}
         />
@@ -318,6 +337,7 @@ export function AdminConsole() {
         mode={access.mode}
         canQueue={access.canQueue}
         canApplyDirectly={access.canChangeParamsDirectly}
+        wrongNetwork={wrongNetwork}
         minDelay={timelock.minDelay}
         busy={busy === "submit"}
         onSelect={(id) => {
@@ -338,6 +358,7 @@ export function AdminConsole() {
           unavailable={queue.unavailable}
           canExecute={access.canExecuteQueued}
           canCancel={access.canCancel}
+          wrongNetwork={wrongNetwork}
           busyId={busy}
           onExecute={executeOperation}
           onCancel={cancelOperation}

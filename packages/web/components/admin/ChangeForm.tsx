@@ -10,6 +10,7 @@ import {
   type OpFieldError,
 } from "../../lib/admin/ops";
 import { formatDuration } from "../../lib/admin/format";
+import { activeChain } from "../../lib/chain";
 import { field, hint, label, panel, primaryButton, textInput } from "../../lib/ui";
 
 /**
@@ -31,6 +32,8 @@ export interface ChangeFormProps {
   mode: GovernanceMode;
   canQueue: boolean;
   canApplyDirectly: boolean;
+  /** The wallet is on a chain this deployment does not live on, so nothing can sign. */
+  wrongNetwork: boolean;
   minDelay?: bigint;
   busy: boolean;
   onSelect: (id: AdminOpId) => void;
@@ -116,17 +119,19 @@ export function ChangeForm(props: ChangeFormProps) {
 
       <button
         data-testid="op-submit"
-        style={primaryButton(!allowed || props.busy)}
-        disabled={!allowed || props.busy}
+        style={primaryButton(!allowed || props.wrongNetwork || props.busy)}
+        disabled={!allowed || props.wrongNetwork || props.busy}
         onClick={props.onSubmit}
       >
         {props.busy
           ? "Confirming…"
-          : props.canQueue
-            ? `Queue through the timelock · executable in ${formatDuration(props.minDelay ?? 0n)}`
-            : props.canApplyDirectly
-              ? "Apply now - no timelock on this deployment"
-              : "Not authorised to change parameters"}
+          : props.wrongNetwork
+            ? `Switch to ${activeChain.name} to sign`
+            : props.canQueue
+              ? `Queue through the timelock · executable in ${formatDuration(props.minDelay ?? 0n)}`
+              : props.canApplyDirectly
+                ? "Apply now - no timelock on this deployment"
+                : "Not authorised to change parameters"}
       </button>
 
       {props.canApplyDirectly && (
