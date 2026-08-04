@@ -3,6 +3,7 @@ import {
   HARDHAT_CHAIN_ID,
   OPERATOR,
   OUTSIDER,
+  connectAs,
   expect,
   test,
 } from "./fixtures/wallet";
@@ -22,9 +23,11 @@ import {
  */
 test.describe("admin console on the wrong network", () => {
   test("disables pause, and says why without impugning the role", async ({ page, wallet }) => {
-    await wallet({ address: OPERATOR, chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/admin");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, {
+      address: OPERATOR,
+      chainId: ETHEREUM_CHAIN_ID,
+      path: "/admin",
+    });
 
     await expect(page.getByTestId("admin-console")).toBeVisible();
     await expect(page.getByTestId("pause-toggle")).toBeDisabled();
@@ -41,9 +44,11 @@ test.describe("admin console on the wrong network", () => {
   });
 
   test("disables submit, and labels it as a network problem", async ({ page, wallet }) => {
-    await wallet({ address: OPERATOR, chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/admin");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, {
+      address: OPERATOR,
+      chainId: ETHEREUM_CHAIN_ID,
+      path: "/admin",
+    });
 
     const submit = page.getByTestId("op-submit");
     await expect(submit).toBeDisabled();
@@ -52,18 +57,22 @@ test.describe("admin console on the wrong network", () => {
   });
 
   test("shows the same banner the play page shows", async ({ page, wallet }) => {
-    await wallet({ address: OPERATOR, chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/admin");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, {
+      address: OPERATOR,
+      chainId: ETHEREUM_CHAIN_ID,
+      path: "/admin",
+    });
 
     await expect(page.getByTestId("wrong-network")).toBeVisible();
     await expect(page.getByTestId("wrong-network")).toContainText("You're on Ethereum");
   });
 
   test("lifts the gate once the operator switches chain", async ({ page, wallet }) => {
-    const handle = await wallet({ address: OPERATOR, chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/admin");
-    await page.getByTestId("connect-wallet").click();
+    const handle = await connectAs(page, wallet, {
+      address: OPERATOR,
+      chainId: ETHEREUM_CHAIN_ID,
+      path: "/admin",
+    });
     await expect(page.getByTestId("pause-toggle")).toBeDisabled();
 
     await handle.setChain(HARDHAT_CHAIN_ID);
@@ -79,9 +88,7 @@ test.describe("admin console access", () => {
   test("turns away an account holding no role, and says so plainly", async ({ page, wallet }) => {
     // The other message, and the one that must NOT appear for a real operator on the
     // wrong chain. Asserting it here pins the two apart.
-    await wallet({ address: OUTSIDER, chainId: HARDHAT_CHAIN_ID });
-    await page.goto("/admin");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, { address: OUTSIDER, chainId: HARDHAT_CHAIN_ID, path: "/admin" });
 
     await expect(page.getByTestId("access-denied")).toBeVisible();
     await expect(page.getByTestId("access-denied")).toContainText("holds none of this deployment");
@@ -89,9 +96,7 @@ test.describe("admin console access", () => {
   });
 
   test("opens for an operator on the right chain", async ({ page, wallet }) => {
-    await wallet({ address: OPERATOR, chainId: HARDHAT_CHAIN_ID });
-    await page.goto("/admin");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, { address: OPERATOR, chainId: HARDHAT_CHAIN_ID, path: "/admin" });
 
     await expect(page.getByTestId("admin-console")).toBeVisible();
     await expect(page.getByTestId("pause-toggle")).toBeEnabled();

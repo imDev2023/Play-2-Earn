@@ -1,4 +1,4 @@
-import { ETHEREUM_CHAIN_ID, HARDHAT_CHAIN_ID, expect, test } from "./fixtures/wallet";
+import { ETHEREUM_CHAIN_ID, HARDHAT_CHAIN_ID, connectAs, expect, test } from "./fixtures/wallet";
 
 /**
  * The wrong-network guard.
@@ -15,9 +15,7 @@ import { ETHEREUM_CHAIN_ID, HARDHAT_CHAIN_ID, expect, test } from "./fixtures/wa
  */
 test.describe("wrong network", () => {
   test("names the chain the player is actually on", async ({ page, wallet }) => {
-    await wallet({ chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, { chainId: ETHEREUM_CHAIN_ID });
 
     const banner = page.getByTestId("wrong-network");
     await expect(banner).toBeVisible();
@@ -28,9 +26,7 @@ test.describe("wrong network", () => {
   });
 
   test("disables the bet button while the banner is showing", async ({ page, wallet }) => {
-    await wallet({ chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/");
-    await page.getByTestId("connect-wallet").click();
+    await connectAs(page, wallet, { chainId: ETHEREUM_CHAIN_ID });
 
     await expect(page.getByTestId("wrong-network")).toBeVisible();
 
@@ -42,9 +38,7 @@ test.describe("wrong network", () => {
   });
 
   test("lifts the gate when the app's own switch button is used", async ({ page, wallet }) => {
-    const handle = await wallet({ chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/");
-    await page.getByTestId("connect-wallet").click();
+    const handle = await connectAs(page, wallet, { chainId: ETHEREUM_CHAIN_ID });
     await expect(page.getByTestId("wrong-network")).toBeVisible();
 
     await page.getByTestId("switch-network").click();
@@ -58,9 +52,7 @@ test.describe("wrong network", () => {
   test("lifts the gate when the player switches in their wallet", async ({ page, wallet }) => {
     // The other half of the same guard. A player who switches network in the wallet
     // UI never touches the app's button, and the banner still has to clear.
-    const handle = await wallet({ chainId: ETHEREUM_CHAIN_ID });
-    await page.goto("/");
-    await page.getByTestId("connect-wallet").click();
+    const handle = await connectAs(page, wallet, { chainId: ETHEREUM_CHAIN_ID });
     await expect(page.getByTestId("wrong-network")).toBeVisible();
 
     await handle.setChain(HARDHAT_CHAIN_ID);
@@ -72,9 +64,7 @@ test.describe("wrong network", () => {
   test("raises the gate when the player leaves the chain mid-session", async ({ page, wallet }) => {
     // The direction that actually loses money. Betting is live, the player switches
     // away, and the button has to stop being live before the next click.
-    const handle = await wallet({ chainId: HARDHAT_CHAIN_ID });
-    await page.goto("/");
-    await page.getByTestId("connect-wallet").click();
+    const handle = await connectAs(page, wallet, { chainId: HARDHAT_CHAIN_ID });
     await expect(page.getByTestId("place-bet")).toBeEnabled();
 
     await handle.setChain(ETHEREUM_CHAIN_ID);
@@ -87,11 +77,12 @@ test.describe("wrong network", () => {
     page,
     wallet,
   }) => {
-    // `undefined` is not a wrong network, and the gap before a connection reports a
-    // chain must not flash "Switch network to play" at somebody on the right one.
-    await wallet({ chainId: HARDHAT_CHAIN_ID });
-    await page.goto("/");
-    await page.getByTestId("connect-wallet").click();
+    // The negative case, so that the five tests above cannot pass by the banner
+    // simply always showing. It does not catch a *flash* of the banner during
+    // connection - an awaited assertion cannot observe a state that has already
+    // gone - so `isWrongNetwork` returning false for an undefined chain is left to
+    // the unit tests in test/chain.test.ts, where it can be checked directly.
+    await connectAs(page, wallet, { chainId: HARDHAT_CHAIN_ID });
 
     await expect(page.getByTestId("place-bet")).toBeEnabled();
     await expect(page.getByTestId("wrong-network")).toHaveCount(0);

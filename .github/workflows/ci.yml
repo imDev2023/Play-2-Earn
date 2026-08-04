@@ -91,6 +91,19 @@ jobs:
       - name: Start the relayer
         run: npm run relayer --workspace @rushood/contracts > /tmp/relayer.log 2>&1 &
 
+      # The bet spec waits 90s for a settlement only the relayer can write, so a
+      # relayer that never came up fails as a timeout in a test about betting rather
+      # than as the startup problem it is.
+      - name: Wait for the relayer
+        run: |
+          for i in $(seq 1 60); do
+            if grep -q "Relayer ready" /tmp/relayer.log 2>/dev/null; then
+              echo "relayer up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "relayer never came up"; cat /tmp/relayer.log; exit 1
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
         working-directory: packages/web

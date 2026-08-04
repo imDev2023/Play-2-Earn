@@ -26,6 +26,11 @@ import { test as base, type Page } from "@playwright/test";
  * `eth_sendTransaction` is forwarded to the node and signed there. That keeps this
  * file free of key material and means a bet placed in a test is a real transaction
  * against real contracts, settled by the real relayer.
+ *
+ * `wallet()` may be called more than once before navigating, and each call announces
+ * another wallet. That is what makes the ranking testable: `orderedConnectors` exists
+ * to pick the same wallet on every load out of a set whose announcement order is not
+ * guaranteed, and a suite that only ever announced one could not tell whether it did.
  */
 
 /** The local Hardhat node - the chain the app expects a wallet to be on. */
@@ -43,6 +48,9 @@ export const OPERATOR = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 /** An account holding no admin role and no RUSH, for the not-an-operator path. */
 export const OUTSIDER = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
 
+/** The rDNS `orderedConnectors` leads with when it is present. */
+export const METAMASK_RDNS = "io.metamask";
+
 export interface WalletOptions {
   /** The account the wallet holds. */
   address: string;
@@ -56,27 +64,41 @@ export interface WalletOptions {
   nodeUrl: string;
 }
 
-const DEFAULTS: Omit<WalletOptions, "address" | "chainId"> = {
+const DEFAULTS: WalletOptions = {
+  address: PLAYER,
+  chainId: HARDHAT_CHAIN_ID,
   rdns: "io.rabby",
   name: "Rabby Wallet",
   nodeUrl: "http://127.0.0.1:8545",
 };
 
-/** Controls the injected wallet exposes to a test, over `window.__wallet`. */
-export interface WalletHandle {
+/**
+ * Controls one injected wallet exposes to a test.
+ *
+ * The page-side object is synchronous; every method here is the same call reached
+ * over `page.evaluate`, so the shape is derived rather than written out twice.
+ */
+export type WalletHandle = {
+  [K in keyof PageWallet]: (
+    ...args: Parameters<PageWallet[K]>
+  ) => Promise<ReturnType<PageWallet[K]>>;
+};
+
+/** The wallet as it exists inside the page. */
+interface PageWallet {
   /** Move the wallet to another chain, as a player switching network in their wallet. */
-  setChain(chainId: number): Promise<void>;
+  setChain(chainId: number): void;
   /** What chain the wallet is on right now. */
-  chainId(): Promise<number>;
+  chainId(): number;
   /** Make the next `eth_sendTransaction` fail the way a declined prompt fails. */
-  rejectNextTransaction(): Promise<void>;
+  rejectNextTransaction(): void;
 }
 
 /**
- * Install the provider. Runs as an init script, so it is in place before the app's
+ * Install a provider. Runs as an init script, so it is in place before the app's
  * first script and before wagmi's EIP-6963 discovery starts listening.
  */
-async function installWallet(page: Page, options: WalletOptions): Promise<void> {
+async function installWallet(page: Page, opts: WalletOptions): Promise<void> {
   await page.addInitScript((opts: WalletOptions) => {
     let chainId = `0x${opts.chainId.toString(16)}`;
     let authorized = false;
@@ -99,7 +121,6 @@ async function installWallet(page: Page, options: WalletOptions): Promise<void> 
     }
 
     const provider = {
-      isRabby: true,
       async request({ method, params = [] }: { method: string; params?: unknown[] }) {
         switch (method) {
           case "eth_chainId":
@@ -158,7 +179,9 @@ async function installWallet(page: Page, options: WalletOptions): Promise<void> 
       },
     };
 
-    (window as unknown as { __wallet: unknown }).__wallet = {
+    const registry = ((window as unknown as { __wallets?: Record<string, unknown> }).__wallets ??=
+      {});
+    registry[opts.rdns] = {
       setChain(next: number) {
         chainId = `0x${next.toString(16)}`;
         emit("chainChanged", chainId);
@@ -169,11 +192,18 @@ async function installWallet(page: Page, options: WalletOptions): Promise<void> 
       },
     };
 
-    (window as unknown as { ethereum: unknown }).ethereum = provider;
+    // The legacy pre-EIP-6963 handle. Only the first wallet to announce takes it, so
+    // a second wallet does not silently become the one `injected()` reaches.
+    (window as unknown as { ethereum?: unknown }).ethereum ??= provider;
 
     const detail = Object.freeze({
       info: {
-        uuid: "6f3c1b8e-1f2a-4d5b-9c7e-0a1b2c3d4e5f",
+        // Stable per wallet, distinct between wallets. wagmi keys announced
+        // connectors by uuid, so a shared one would collapse two wallets into one.
+        uuid: `00000000-0000-4000-8000-${opts.rdns
+          .replace(/[^a-z0-9]/gi, "")
+          .slice(0, 12)
+          .padEnd(12, "0")}`,
         name: opts.name,
         rdns: opts.rdns,
         icon: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=",
@@ -186,46 +216,64 @@ async function installWallet(page: Page, options: WalletOptions): Promise<void> 
 
     window.addEventListener("eip6963:requestProvider", announce);
     announce();
-  }, options);
+  }, opts);
 }
 
 export interface WalletFixtures {
   /**
-   * Install a wallet into the page. Call before navigating - it registers an init
-   * script, which only applies to loads that come after it.
+   * Announce a wallet to the page. Call before navigating - it registers an init
+   * script, which only applies to loads that come after it. Call more than once to
+   * announce more than one wallet.
    */
-  wallet: (
-    options: Partial<WalletOptions> & { address?: string; chainId?: number },
-  ) => Promise<WalletHandle>;
+  wallet: (options?: Partial<WalletOptions>) => Promise<WalletHandle>;
 }
 
 export const test = base.extend<WalletFixtures>({
   wallet: async ({ page }, use) => {
-    await use(async (overrides) => {
-      await installWallet(page, {
-        ...DEFAULTS,
-        address: PLAYER,
-        chainId: HARDHAT_CHAIN_ID,
-        ...overrides,
-      });
+    await use(async (overrides = {}) => {
+      const opts = { ...DEFAULTS, ...overrides };
+      await installWallet(page, opts);
 
+      // Keyed by rdns, so each handle drives the wallet it was created for even when
+      // the page has several announced.
+      const { rdns } = opts;
       return {
-        setChain: (id: number) => page.evaluate((next) => window.__wallet.setChain(next), id),
-        chainId: () => page.evaluate(() => window.__wallet.chainId()),
-        rejectNextTransaction: () => page.evaluate(() => window.__wallet.rejectNextTransaction()),
+        setChain: (chainId: number) =>
+          page.evaluate(([id, next]) => window.__wallets[id].setChain(next), [
+            rdns,
+            chainId,
+          ] as const),
+        chainId: () => page.evaluate((id) => window.__wallets[id].chainId(), rdns),
+        rejectNextTransaction: () =>
+          page.evaluate((id) => window.__wallets[id].rejectNextTransaction(), rdns),
       };
     });
   },
 });
 
+/**
+ * Announce a wallet, open a page and connect it.
+ *
+ * Every spec in this suite starts this way, and spelling it out at each one buried
+ * what the test was actually about under three lines of setup.
+ */
+export async function connectAs(
+  page: Page,
+  wallet: WalletFixtures["wallet"],
+  options: Partial<WalletOptions> & { path?: string } = {},
+): Promise<WalletHandle> {
+  const { path = "/", ...walletOptions } = options;
+  const handle = await wallet(walletOptions);
+  await page.goto(path);
+  await page.getByTestId("connect-wallet").click();
+  return handle;
+}
+
 export { expect } from "@playwright/test";
 
 declare global {
   interface Window {
-    __wallet: {
-      setChain(chainId: number): void;
-      chainId(): number;
-      rejectNextTransaction(): void;
-    };
+    /** Every announced wallet, by rDNS. Installed by the init script above. */
+    __wallets: Record<string, PageWallet>;
   }
 }
