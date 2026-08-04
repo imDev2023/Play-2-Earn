@@ -13,10 +13,10 @@ import type { RelayerGame } from "../lib/relayer-core";
  * compiled contract, so a signature change breaks a test rather than a deployment.
  */
 export const RELAYER_GAME_ABI = [
-  "function activeBetId() view returns (uint256)",
+  "function activeBetId() view returns (uint128)",
   "function currentCommit() view returns (bytes32)",
   "function SETTLE_TIMEOUT() view returns (uint256)",
-  "function bets(uint256) view returns (address player, uint8 tier, uint256 stake, uint256 clientSeed, uint256 placedAt, bool settled, bytes32 commit, bytes32 reveal)",
+  "function bets(uint256) view returns (address player, uint8 tier, bool settled, uint64 placedAt, uint256 stake, uint256 clientSeed, bytes32 commit, bytes32 reveal)",
   "function settleBet(bytes32 reveal)",
   "function rotateChain(bytes32 newGenesis)",
 ] as const;
