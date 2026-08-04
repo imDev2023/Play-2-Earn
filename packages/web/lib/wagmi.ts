@@ -2,6 +2,7 @@ import { http, createConfig } from "wagmi";
 import { hardhat } from "wagmi/chains";
 import { injected, mock } from "wagmi/connectors";
 import { robinhoodChain, robinhoodTestnet } from "./chain";
+import { LOCAL_RPC_URL } from "./endpoints";
 
 /**
  * wagmi config. Knows three chains: the local Hardhat node for development, plus
@@ -15,13 +16,11 @@ import { robinhoodChain, robinhoodTestnet } from "./chain";
  */
 const DEV_ACCOUNT = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"; // Hardhat account #1
 
-const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL ?? "http://127.0.0.1:8545";
-
 export const wagmiConfig = createConfig({
   chains: [hardhat, robinhoodChain, robinhoodTestnet],
   connectors: [injected(), mock({ accounts: [DEV_ACCOUNT], features: {} })],
   transports: {
-    [hardhat.id]: http(rpcUrl),
+    [hardhat.id]: http(LOCAL_RPC_URL),
     [robinhoodChain.id]: http(),
     [robinhoodTestnet.id]: http(),
   },

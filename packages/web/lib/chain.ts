@@ -1,6 +1,13 @@
 import { defineChain } from "viem";
 import { hardhat } from "wagmi/chains";
 import type { Address } from "viem";
+import {
+  MAINNET_BRIDGE_URL,
+  MAINNET_EXPLORER_URL,
+  MAINNET_RPC_URL,
+  TESTNET_EXPLORER_URL,
+  TESTNET_RPC_URL,
+} from "./endpoints";
 
 /**
  * Chain definitions and player-onboarding helpers.
@@ -20,10 +27,6 @@ import type { Address } from "viem";
  * NEXT_PUBLIC_ROBINHOOD_* env vars, and `activeChainConfigError` reports it plainly
  * when the app is pointed at 4663 without them.
  */
-
-const MAINNET_RPC_URL = process.env.NEXT_PUBLIC_ROBINHOOD_RPC_URL ?? "";
-const MAINNET_EXPLORER_URL = process.env.NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL ?? "";
-const MAINNET_BRIDGE_URL = process.env.NEXT_PUBLIC_GAS_BRIDGE_URL ?? "";
 
 /** True once real mainnet endpoints have been supplied. False in every build today. */
 export const MAINNET_ENDPOINTS_CONFIGURED = MAINNET_RPC_URL !== "" && MAINNET_EXPLORER_URL !== "";
@@ -50,18 +53,13 @@ export const robinhoodTestnet = defineChain({
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
     default: {
-      http: [
-        process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_RPC_URL ??
-          "https://rpc.testnet.chain.robinhood.com/rpc",
-      ],
+      http: [TESTNET_RPC_URL],
     },
   },
   blockExplorers: {
     default: {
       name: "Robinhood Chain Testnet Explorer",
-      url:
-        process.env.NEXT_PUBLIC_ROBINHOOD_TESTNET_EXPLORER_URL ??
-        "https://explorer.testnet.chain.robinhood.com",
+      url: TESTNET_EXPLORER_URL,
     },
   },
 });
