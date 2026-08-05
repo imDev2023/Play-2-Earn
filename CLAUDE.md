@@ -16,16 +16,16 @@ It deliberately does not restate what the linked files already say.
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
+| `web3-security.md` | Four links, untracked at the repo root. Three are Solidity-only; SlowMist's front-end section is *only* HTTP security headers (PR #46). The one that bites client code is Consensys "Timestamp Dependence": the 15-second rule. |
 
 ## Deployment reality
 
 **There is no mainnet deployment.** Only Robinhood Chain testnet 46630, deployed 2026-07-27.
-`git log --all --diff-filter=A -- 'docs/deployments/*'` shows testnet commits and nothing else.
-The README's "mainnet, real-value" opening line is product intent, not a deployed fact, and `lib/chain.ts` hard-codes no mainnet endpoints on purpose.
+Verify with `git log --all --diff-filter=A -- 'docs/deployments/*'`.
+The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` hard-codes no mainnet endpoints on purpose.
 
-Editing a `.sol` file breaks source verification for the testnet deployment, which is why the freeze existed.
-It was described as protecting a mainnet deployment; that was wrong.
-PR #48 deliberately breaks it and marks `docs/deployments/robinhoodTestnet.md` stale rather than leaving a false "verified" column.
+Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
+It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
 ## Traps that cost time
 
@@ -53,9 +53,30 @@ If a chain-backed suite times out intermittently, lower the worker count before 
 It is built from `wagmiConfig.chains`.
 This is why the #45 wrong-network bug was untestable until the injected EIP-6963 provider in `packages/web/e2e-connected/fixtures/wallet.ts`.
 
+**Do not onboard a wallet extension for manual driving.**
+Adapt that same fixture into a plain IIFE and pass it to `agent-browser --init-script`.
+No onboarding, no popups, survives reloads, and it exposes `rejectNextTransaction()` and `setChain()` - a declined prompt and a wrong network on demand, which a real wallet cannot give you reliably.
+Reserve a real extension for verifying extension-specific behaviour only; see `docs/metamask-agent-browser.md` for that path and its LavaMoat trap.
+If `agent-browser eval` starts returning `""`, check `get url` - the tab has gone to `about:blank` and every result since is meaningless.
+
+**A PR body claiming a green suite is not evidence.**
+`gh pr checks <n>` is.
+PR #48 sat red for a day behind a body that said "typecheck clean".
+
+**Check for path collisions before adding a file while another PR is in review.**
+`git diff main...<other-branch> --stat` .
+An ABI-order pin was added at exactly the path #48 already creates, which is the collision it was meant to prevent.
+
 **Ports.** Never use 3000 or 3100; other projects bind them.
 Confirm the title says RUSHOOD before trusting anything you see.
 A backgrounded `next dev` exits the moment its stdin hits EOF; hold it open with `tail -f /dev/null | PORT=<port> npm run dev -- --port <port>`.
+
+## The player's escape hatch
+
+`refund(betId)` returns the stake once `SETTLE_TIMEOUT` has elapsed.
+Permissionless, works while paused, cannot be refused, and it does **not** advance the chain head - the reveal was never consumed.
+It was absent from the web ABI entirely until #51, so the guarantee existed on-chain and nowhere a player could reach.
+Anything that displays its deadline must read **chain** time, never the browser clock, and must never unlock the button before the contract would accept the call.
 
 ## Owner-owned, never claim these are done
 
