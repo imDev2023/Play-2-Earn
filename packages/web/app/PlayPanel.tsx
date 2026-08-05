@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import {
   useAccount,
@@ -30,7 +30,7 @@ import { useBetHistory } from "../lib/useBetHistory";
 import { betBlock, betBlockMessage } from "../lib/bet-validity";
 import { approvalAmount, betsCovered } from "../lib/approval";
 import { betFailure, type BetFailure } from "../lib/errors";
-import { betBoundsLabel } from "../lib/amount";
+import { betBoundsLabel, formatAmount } from "../lib/amount";
 import { settlementState, type SettlementState } from "../lib/settlement";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
@@ -82,6 +82,19 @@ export function PlayPanel() {
 
   const wrongNetwork = isConnected && chainId !== ACTIVE_CHAIN_ID;
 
+  // Every event this panel watches is chain-wide, so each handler has to ask whether the
+  // log is about the connected player. Asking it the same way in one place keeps the
+  // settle, refund and recovery paths from drifting on address casing.
+  // Memoised on the address alone: the recovery effect depends on it, and a fresh
+  // closure each render would re-run that effect on every render.
+  const isMine = useCallback(
+    (player: string | undefined) =>
+      player !== undefined &&
+      address !== undefined &&
+      player.toLowerCase() === address.toLowerCase(),
+    [address],
+  );
+
   const { history } = useBetHistory(address);
 
   const { data: balance, refetch: refetchBalance } = useReadContract({
@@ -130,7 +143,7 @@ export function PlayPanel() {
       // Somebody else's bet is none of this screen's business, and a settled one needs
       // no help.
       if (cancelled || bet.settled) return;
-      if (bet.player.toLowerCase() !== address.toLowerCase()) return;
+      if (!isMine(bet.player)) return;
       setPending({ betId: activeBetId, placedAt: Number(bet.placedAt) });
       setStatus("waiting");
       setBetTier(bet.tier);
@@ -140,7 +153,7 @@ export function PlayPanel() {
     return () => {
       cancelled = true;
     };
-  }, [activeBetId, address, pending]);
+  }, [activeBetId, address, pending, isMine]);
 
   // Chain time, watched only while a bet is pending. The countdown has to agree with
   // the contract that enforces it: a refund button that unlocks a minute before
@@ -196,7 +209,7 @@ export function PlayPanel() {
           win?: boolean;
           payout?: bigint;
         };
-        if (player?.toLowerCase() === address?.toLowerCase() && win !== undefined) {
+        if (isMine(player) && win !== undefined) {
           setResult({ win, payout: payout ?? 0n });
           setStatus("idle");
           setPending(null);
@@ -219,7 +232,7 @@ export function PlayPanel() {
     onLogs: (logs) => {
       for (const log of logs) {
         const { player, betId } = log.args as { player?: string; betId?: bigint };
-        if (player?.toLowerCase() === address?.toLowerCase() && betId === pending?.betId) {
+        if (isMine(player) && betId === pending?.betId) {
           setPending(null);
           setStatus("idle");
           setResult(null);
@@ -430,8 +443,8 @@ export function PlayPanel() {
           {potentialWin !== null && !belowMin && !aboveMax && (
             <span data-testid="potential-win" className="mono" style={{ fontSize: "0.85rem" }}>
               wins{" "}
-              <strong style={{ color: "var(--cool)" }}>{formatUnits(potentialWin, 18)} RUSH</strong>{" "}
-              at {multiplierLabel(tier)}
+              <strong style={{ color: "var(--cool)" }}>{formatAmount(potentialWin)} RUSH</strong> at{" "}
+              {multiplierLabel(tier)}
             </span>
           )}
         </div>

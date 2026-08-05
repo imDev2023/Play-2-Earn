@@ -52,7 +52,8 @@ export function SettlementHelp({
       {refundable ? (
         <p style={body}>
           The settlement window has passed, so you can take your stake back now. This returns the
-          amount you bet - not a win, because no draw ever happened.
+          amount you bet - not a win, because no draw ever happened. Settling is normally paid for
+          by the relayer, but this one is your transaction, so your wallet pays its gas.
         </p>
       ) : (
         <p style={body}>

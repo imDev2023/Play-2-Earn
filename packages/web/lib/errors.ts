@@ -23,11 +23,23 @@ const USER_REJECTED_REQUEST = 4001;
  * Walks `cause`, since viem and wagmi wrap the provider's error rather than replacing
  * it, so the code sits a layer or two down.
  */
-export function isUserRejection(error: unknown, depth = 0): boolean {
+function isUserRejection(error: unknown, depth = 0): boolean {
   if (depth > 4 || typeof error !== "object" || error === null) return false;
   const { code, cause } = error as { code?: unknown; cause?: unknown };
   if (code === USER_REJECTED_REQUEST || code === String(USER_REJECTED_REQUEST)) return true;
   return isUserRejection(cause, depth + 1);
+}
+
+/**
+ * Did the person decline, by code or - for a wallet that drops the code - by wording?
+ *
+ * Both callers below ask exactly this, and they must keep agreeing: one decides whether
+ * a failed switch is worth reporting, the other whether a failed bet is coloured as a
+ * fault. If the two drifted apart, the same declined prompt would be silent on one
+ * screen and an error on the other.
+ */
+function declined(error: unknown, message: string): boolean {
+  return isUserRejection(error) || /user rejected|user denied|rejected the request/i.test(message);
 }
 
 /** What to tell the player after a bet attempt did not go through. */
@@ -57,7 +69,7 @@ export type BetFailure = {
 export function betFailure(error: unknown): BetFailure {
   const message = readableError(error);
 
-  if (isUserRejection(error) || /user rejected|user denied|rejected the request/i.test(message)) {
+  if (declined(error, message)) {
     return { message: "You declined the prompt, so no bet was placed.", tone: "neutral" };
   }
 
@@ -84,9 +96,7 @@ export function betFailure(error: unknown): BetFailure {
 export function switchFailureMessage(error: unknown): string | null {
   const message = readableError(error);
 
-  if (isUserRejection(error) || /user rejected|user denied|rejected the request/i.test(message)) {
-    return null;
-  }
+  if (declined(error, message)) return null;
 
   if (/same rpc (endpoint|url)/i.test(message)) {
     return (

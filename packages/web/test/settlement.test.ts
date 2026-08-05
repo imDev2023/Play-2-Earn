@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { countdownLabel, settlementState, SLOW_SETTLE_MS } from "../lib/settlement";
+import { countdownLabel, settlementState, SLOW_SETTLE_SECONDS } from "../lib/settlement";
 
 /**
  * The escalation behind the "Drawing..." screen.
@@ -12,7 +12,7 @@ import { countdownLabel, settlementState, SLOW_SETTLE_MS } from "../lib/settleme
 
 const TIMEOUT = 3600;
 const PLACED = 1_000_000;
-const SLOW_AT = PLACED + SLOW_SETTLE_MS / 1000;
+const SLOW_AT = PLACED + SLOW_SETTLE_SECONDS;
 
 describe("settlementState", () => {
   it("stays quiet while a healthy relayer would still be working", () => {
@@ -23,7 +23,7 @@ describe("settlementState", () => {
   it("explains itself once the settle is slower than a settle should be", () => {
     const state = settlementState({ placedAt: PLACED, now: SLOW_AT, settleTimeout: TIMEOUT });
     assert.equal(state.phase, "slow");
-    assert.equal(state.refundableIn, TIMEOUT - SLOW_SETTLE_MS / 1000);
+    assert.equal(state.refundableIn, TIMEOUT - SLOW_SETTLE_SECONDS);
   });
 
   it("offers the refund only once the contract would accept the call", () => {

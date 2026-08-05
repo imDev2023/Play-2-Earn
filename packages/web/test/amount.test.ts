@@ -60,11 +60,6 @@ describe("formatAmount", () => {
   it("handles zero", () => {
     assert.equal(formatAmount(0n), "0");
   });
-
-  it("flips the rounding direction through a negation, so a bound stays a bound", () => {
-    const value = -((RUSH(10_000n) * 10n) / 19n);
-    assert.equal(formatAmount(value, { rounding: "down" }), "-5,263.16");
-  });
 });
 
 describe("betBoundsLabel", () => {

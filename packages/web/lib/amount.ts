@@ -20,20 +20,23 @@ export type Rounding = "down" | "up";
 /** Digits after the decimal point on a displayed amount. */
 const DISPLAY_DECIMALS = 2;
 
+/** RUSH is an 18-decimal token, and it is the only thing this app displays. */
+const WEI_PER_RUSH = 10n ** 18n;
+
 /**
- * Format a wei amount for display, rounding in the direction that keeps it valid.
+ * Format a RUSH amount for display, rounding in the direction that keeps it valid.
  *
  * Exact values print exactly: a maximum that really is 5257.5 keeps its half, and a
  * minimum of 1 stays `1` rather than becoming `1.00`. Only a value that needs more
  * precision than we show gets rounded, which is the case the direction matters for.
+ *
+ * Amounts here are balances, stakes and payouts, so they are never negative.
  */
 export function formatAmount(
   wei: bigint,
-  { decimals = 18, rounding = "down" }: { decimals?: number; rounding?: Rounding } = {},
+  { rounding = "down" }: { rounding?: Rounding } = {},
 ): string {
-  if (wei < 0n) return `-${formatAmount(-wei, { decimals, rounding: flip(rounding) })}`;
-
-  const scale = 10n ** BigInt(decimals);
+  const scale = WEI_PER_RUSH;
   const shown = 10n ** BigInt(DISPLAY_DECIMALS);
   // Value expressed in units of the smallest digit we display.
   const units = (wei * shown) / scale;
@@ -50,10 +53,6 @@ export function formatAmount(
   // Trailing zeros carry no information here: 1.50 is 1.5.
   const digits = fraction.toString().padStart(DISPLAY_DECIMALS, "0").replace(/0+$/, "");
   return `${group}.${digits}`;
-}
-
-function flip(rounding: Rounding): Rounding {
-  return rounding === "down" ? "up" : "down";
 }
 
 /**

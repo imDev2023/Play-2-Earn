@@ -25,8 +25,14 @@
  * hard-coded hour that would drift if governance ever changed it.
  */
 
-/** How long a settle may take before the UI stops implying everything is fine. */
-export const SLOW_SETTLE_MS = 20_000;
+/**
+ * How long a settle may take before the UI stops implying everything is fine.
+ *
+ * Seconds, like every other quantity in this module: `placedAt`, `now` and
+ * `settleTimeout` are all chain seconds, and one constant in milliseconds would be the
+ * only unit crossing in the file.
+ */
+export const SLOW_SETTLE_SECONDS = 20;
 
 export type SettlementPhase = "drawing" | "slow" | "refundable";
 
@@ -57,7 +63,7 @@ export function settlementState({
   const refundableIn = Math.max(0, settleTimeout - elapsed);
 
   if (refundableIn === 0) return { phase: "refundable", refundableIn: 0 };
-  if (elapsed * 1000 >= SLOW_SETTLE_MS) return { phase: "slow", refundableIn };
+  if (elapsed >= SLOW_SETTLE_SECONDS) return { phase: "slow", refundableIn };
   return { phase: "drawing", refundableIn };
 }
 
