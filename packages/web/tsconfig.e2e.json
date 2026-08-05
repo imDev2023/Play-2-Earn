@@ -4,6 +4,12 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["e2e/**/*.ts", "playwright.config.ts"],
+  "include": [
+    "e2e/**/*.ts",
+    "e2e-connected/**/*.ts",
+    "playwright.config.ts",
+    "playwright.base.ts",
+    "playwright.connected.config.ts"
+  ],
   "exclude": ["node_modules"]
 }
