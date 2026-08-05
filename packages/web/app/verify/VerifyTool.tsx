@@ -123,7 +123,7 @@ export function VerifyTool() {
         functionName: "bets",
         args: [BigInt(betId)],
       });
-      const [player, tier, , clientSeed, , settled, commit, reveal] = bet;
+      const [player, tier, settled, , , clientSeed, commit, reveal] = bet;
       if (player === "0x0000000000000000000000000000000000000000") {
         setLookup({ state: "error", message: `No bet #${betId} exists on this contract.` });
         return;
