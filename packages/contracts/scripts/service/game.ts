@@ -21,10 +21,30 @@ export const RELAYER_GAME_ABI = [
   "function rotateChain(bytes32 newGenesis)",
 ] as const;
 
+/**
+ * One bet as the hand-written ABI above declares it, every field of it.
+ *
+ * The service itself only reads `placedAt` and `settled`, so this was once narrowed to
+ * those two. That hid the field order from the type checker at exactly the point the
+ * order matters most: this is the relayer's only view of a struct that #48 repacked, and
+ * a tuple decoded into its neighbours does not throw. Declaring the whole tuple lets the
+ * guard test in `RelayerService.ts` assert fields that cannot be mistaken for each other.
+ */
+export interface ServiceBet {
+  player: string;
+  tier: bigint;
+  settled: boolean;
+  placedAt: bigint;
+  stake: bigint;
+  clientSeed: bigint;
+  commit: string;
+  reveal: string;
+}
+
 /** What the service needs beyond the core's `RelayerGame`. */
 export interface ServiceGame extends RelayerGame {
   SETTLE_TIMEOUT(): Promise<bigint>;
-  bets(betId: bigint): Promise<{ placedAt: bigint; settled: boolean }>;
+  bets(betId: bigint): Promise<ServiceBet>;
 }
 
 export function connectGame(address: string, runner: Signer | Provider): ServiceGame {
