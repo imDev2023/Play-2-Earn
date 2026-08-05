@@ -89,6 +89,17 @@ export const GAME_ABI = [
     ],
     outputs: [{ name: "betId", type: "uint256" }],
   },
+  {
+    // The player's way out of a settlement that never came. Callable by anyone once
+    // SETTLE_TIMEOUT has elapsed, and it works while paused, so an incident cannot
+    // strand a stake. It was missing from this ABI entirely, which meant the guarantee
+    // existed on-chain and nowhere a player could reach it.
+    type: "function",
+    name: "refund",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "betId", type: "uint256" }],
+    outputs: [],
+  },
   // --- The admin/treasury console's read surface (#25) -----------------------------
   // Roles, live economics and the solvency numbers an operator needs to see before
   // touching anything. All plain views; the console never infers a param it can read.
@@ -291,6 +302,17 @@ export const GAME_ABI = [
       { name: "roll", type: "uint256", indexed: false },
     ],
   },
+  {
+    // A refunded bet never settles, so it never emits BetSettled. Without this the play
+    // screen would keep drawing after the stake had already been returned.
+    type: "event",
+    name: "BetRefunded",
+    inputs: [
+      { name: "betId", type: "uint256", indexed: true },
+      { name: "player", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+  },
 ] as const;
 
 /** Minimal ERC20 ABI for reading balances and approving the game as spender. */
@@ -323,3 +345,48 @@ export const RUSH_ABI = [
     outputs: [{ type: "bool" }],
   },
 ] as const;
+
+/**
+ * One bet, by name.
+ *
+ * `bets()` is a Solidity struct getter, so viem hands back a positional array and every
+ * caller destructures it by position. That is this repo's sharpest edge: reorder the
+ * struct and each field decodes into its neighbour without throwing, because an address
+ * is still an address and a uint is still a uint. Two consumers nearly shipped that way
+ * in #48 and both were caught by review rather than by a test.
+ *
+ * Naming the fields once, here, means a reorder is a one-line change in a single place
+ * instead of a hunt through five call sites. It does not make a reorder *safe* on its
+ * own - `stake`, `clientSeed` and `placedAt` are all bigint, so swapping them still
+ * type-checks - which is why `test/contracts.test.ts` pins the ABI's declared order and
+ * widths alongside it.
+ *
+ * The existing positional call sites are deliberately left alone: `bets()` is being
+ * repacked in #48 and rewriting them here would collide with a change already in review.
+ */
+export type BetView = {
+  player: Address;
+  tier: number;
+  stake: bigint;
+  clientSeed: bigint;
+  placedAt: bigint;
+  settled: boolean;
+  commit: `0x${string}`;
+  reveal: `0x${string}`;
+};
+
+type RawBet = readonly [
+  Address,
+  number,
+  bigint,
+  bigint,
+  bigint,
+  boolean,
+  `0x${string}`,
+  `0x${string}`,
+];
+
+export function toBetView(raw: RawBet): BetView {
+  const [player, tier, stake, clientSeed, placedAt, settled, commit, reveal] = raw;
+  return { player, tier, stake, clientSeed, placedAt, settled, commit, reveal };
+}

@@ -1,11 +1,11 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { readableError, switchFailureMessage } from "../lib/errors";
+import { betFailure, readableError, switchFailureMessage } from "../lib/errors";
 
 describe("readableError", () => {
   it("keeps only the first line of a multi-paragraph provider error", () => {
     const error = new Error(
-      "The contract function \"setMinBet\" reverted.\n\nError: EconomicsLocked()\n\nVersion: viem@2.55.2",
+      'The contract function "setMinBet" reverted.\n\nError: EconomicsLocked()\n\nVersion: viem@2.55.2',
     );
     assert.equal(readableError(error), 'The contract function "setMinBet" reverted.');
   });
@@ -39,7 +39,9 @@ describe("switchFailureMessage", () => {
 
   it("explains a chain the wallet has never heard of", () => {
     const message = switchFailureMessage(
-      new Error('Unrecognized chain ID "0x7a69". Try adding the chain using wallet_addEthereumChain first.'),
+      new Error(
+        'Unrecognized chain ID "0x7a69". Try adding the chain using wallet_addEthereumChain first.',
+      ),
     );
     assert.match(String(message), /does not know this network yet/);
   });
@@ -73,5 +75,54 @@ describe("switchFailureMessage", () => {
       switchFailureMessage(new Error("Wallet is locked.\n\nVersion: viem@2.55.2")),
       "Wallet is locked.",
     );
+  });
+});
+
+/**
+ * Declining a wallet prompt is a decision, not a fault.
+ *
+ * The raw string that reached the UI was "User rejected the request." - written from
+ * the wallet's point of view, naming the player in the third person, and rendered in
+ * the same red as a revert. Someone who deliberately backed out of a spend was told
+ * they had done something wrong.
+ */
+describe("betFailure", () => {
+  it("treats a declined prompt as a decision, not an error", () => {
+    const error = Object.assign(new Error("User rejected the request."), { code: 4001 });
+    assert.deepEqual(betFailure(error), {
+      message: "You declined the prompt, so no bet was placed.",
+      tone: "neutral",
+    });
+  });
+
+  it("finds the rejection code through the wrappers viem and wagmi add", () => {
+    const error = new Error("Something went wrong");
+    (error as { cause?: unknown }).cause = { cause: { code: 4001 } };
+    assert.equal(betFailure(error).tone, "neutral");
+  });
+
+  it("recognises a rejection from a wallet that reports the code as a string", () => {
+    const error = Object.assign(new Error("denied"), { code: "4001" });
+    assert.equal(betFailure(error).tone, "neutral");
+  });
+
+  it("does not depend on English, because the code is the part that is not localised", () => {
+    // A Spanish MetaMask. Matching wording would show this person a fault.
+    const error = Object.assign(new Error("El usuario rechazo la solicitud"), { code: 4001 });
+    assert.equal(betFailure(error).tone, "neutral");
+  });
+
+  it("still recognises a rejection from a wallet that drops the code entirely", () => {
+    assert.equal(betFailure(new Error("User rejected the request.")).tone, "neutral");
+  });
+
+  it("keeps a real failure's message, because that is the part that identifies it", () => {
+    const error = new Error(
+      'The contract function "placeBet" reverted.\n\nError: BetTooLarge()\n\nVersion: viem@2.55.2',
+    );
+    assert.deepEqual(betFailure(error), {
+      message: 'The contract function "placeBet" reverted.',
+      tone: "error",
+    });
   });
 });
