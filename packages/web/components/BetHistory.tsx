@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { formatUnits } from "viem";
+import { formatAmount } from "../lib/amount";
 import { multiplierLabel, TIERS } from "../lib/contracts";
 import { verifyHref, verifyInputsFor } from "../lib/fairness";
 import type { BetEntry } from "../lib/useBetHistory";
@@ -10,10 +10,16 @@ import { label } from "../lib/ui";
 /** The player's past plays, newest first, with outcome and payout. */
 export function BetHistory({ history }: { history: BetEntry[] }) {
   return (
-    <section data-testid="history" style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+    <section
+      data-testid="history"
+      style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}
+    >
       <span style={label}>Your plays</span>
       {history.length === 0 ? (
-        <p data-testid="history-empty" style={{ color: "var(--muted)", margin: 0, fontSize: "0.9rem" }}>
+        <p
+          data-testid="history-empty"
+          style={{ color: "var(--muted)", margin: 0, fontSize: "0.9rem" }}
+        >
           No plays yet. Pick a rung and take your shot.
         </p>
       ) : (
@@ -28,7 +34,7 @@ export function BetHistory({ history }: { history: BetEntry[] }) {
                   </span>
                 </span>
                 <span className="mono" style={{ color: "var(--muted)", fontSize: "0.78rem" }}>
-                  {formatUnits(bet.stake, 18)} RUSH
+                  {formatAmount(bet.stake)} RUSH
                 </span>
               </span>
               <span style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
@@ -64,15 +70,29 @@ function Verify({ bet }: { bet: BetEntry }) {
 function Outcome({ bet }: { bet: BetEntry }) {
   if (bet.outcome === "pending") {
     return (
-      <span className="mono" style={{ ...badge, color: "var(--muted)", borderColor: "var(--line)" }}>
+      <span
+        className="mono"
+        style={{ ...badge, color: "var(--muted)", borderColor: "var(--line)" }}
+      >
         pending
+      </span>
+    );
+  }
+  if (bet.outcome === "refunded") {
+    // Neither a win nor a loss: no draw happened, and the stake came back.
+    return (
+      <span
+        className="mono"
+        style={{ ...badge, color: "var(--muted)", borderColor: "var(--line)" }}
+      >
+        refunded {formatAmount(bet.payout)}
       </span>
     );
   }
   if (bet.outcome === "won") {
     return (
       <span className="mono" style={{ ...badge, color: "var(--win)", borderColor: "var(--win)" }}>
-        won +{formatUnits(bet.payout, 18)}
+        won +{formatAmount(bet.payout)}
       </span>
     );
   }
