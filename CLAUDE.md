@@ -10,7 +10,7 @@ It deliberately does not restate what the linked files already say.
 
 | Path | Why |
 |---|---|
-| `AGENTS.md` | Repo conventions and the prettier trap. Short on `main`; the fuller version is on PR #46. |
+| `AGENTS.md` | Repo conventions, the prettier trap, and the **review cadence**. Short on `main`; the prettier and advisories sections are on PR #46 and the review cadence on PR #52. |
 | `docs/spec/RUSHOOD-game-spec.md` | The product spec, and the authority for the Spec axis of `/code-review`. |
 | `docs/agents/issue-tracker.md` | Issues live as GitHub issues, driven by `gh`. |
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
@@ -35,6 +35,19 @@ An address is still an address.
 The consumers are listed in the PR #48 body; two of them were missed on the first pass and caught only by review.
 `packages/web/test/contracts.test.ts` and the hand-written-ABI test in `packages/contracts/test/RelayerService.ts` now guard it.
 
+**This trap bit again inside the helper written to prevent it.**
+`toBetView` (#51) exists to name those fields once, and its first revision destructured the tuple by position, like everything else.
+#48 repacks the struct to `player, tier, settled, placedAt, stake, ...`; the two PRs touch different lines of `contracts.ts`, so they would have merged clean and left the helper reading `settled` out of the stake slot.
+That is a truthy bigint, so pending-bet recovery would have bailed on every unsettled bet and the settlement panel would never have returned after a reload.
+The second revision fixed the order and still shipped the same class of hole by another route: it widened the parameter to `readonly unknown[]` and returned an unchecked cast, so nothing checked *names* and nothing checked the call site.
+Neither revision was caught by a test. Both were caught by reviewing the fix, which is the whole argument for the cadence below.
+
+The rule this leaves: **any new `bets()` consumer derives its field order from the ABI and never hard-codes one.**
+`toBetView` now zips against the `bets()` entry in `GAME_ABI`, the same declaration viem decodes against, so the two cannot disagree about order.
+Names are pinned separately by `BetViewNamesMatchAbi`, a compile-time assertion that `BetView`'s keys and the ABI's declared output names are the same set; without it a rename leaves the field `undefined` on every decoded bet and the cast hides it.
+`RawBet` is `ReadContractReturnType<typeof GAME_ABI, "bets">` rather than a hand-written tuple, so a reorder retypes the call site too.
+What none of that checks is the hand-written `GAME_ABI` drifting from `RushoodGame.sol`; that is `test/contracts.test.ts`, which lives on #48.
+
 **Contract tests cannot catch a field reorder.**
 Typechain returns Solidity structs as named tuples, so they pass whatever the order is.
 That is why the guards above live in the web package and in an explicitly hand-written-ABI test.
@@ -58,6 +71,12 @@ Adapt that same fixture into a plain IIFE and pass it to `agent-browser --init-s
 No onboarding, no popups, survives reloads, and it exposes `rejectNextTransaction()` and `setChain()` - a declined prompt and a wrong network on demand, which a real wallet cannot give you reliably.
 Reserve a real extension for verifying extension-specific behaviour only; see `docs/metamask-agent-browser.md` for that path and its LavaMoat trap.
 If `agent-browser eval` starts returning `""`, check `get url` - the tab has gone to `about:blank` and every result since is meaningless.
+
+**A commit that answers a review finding needs its own review.**
+The cadence is in `AGENTS.md` (PR #52) and is not restated here; what belongs here is why it keeps being skipped.
+A fix closing a finding feels like the end of a review rather than the start of one, and it is written under the impression that the problem is already understood - the exact state in which a fix reproduces the bug it was meant to remove.
+Both `toBetView` revisions above were written that way.
+Size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
 
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is.
