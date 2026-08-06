@@ -22,7 +22,7 @@ test("an unconnected visitor is asked to sign in, and sees no treasury", async (
   await page.goto("/admin");
   await expect(page.getByTestId("admin-gate")).toBeVisible();
   await expect(page.getByText("Operator sign-in")).toBeVisible();
-  await expect(page.getByTestId("connect-mock")).toBeVisible();
+  await expect(page.getByTestId("connect-wallet")).toBeVisible();
 
   await expect(page.getByTestId("admin-console")).toHaveCount(0);
   await expect(page.getByTestId("treasury-panel")).toHaveCount(0);
@@ -34,7 +34,7 @@ test("connecting a wallet is not itself authorisation - the roles come from chai
   page,
 }) => {
   await page.goto("/admin");
-  await page.getByTestId("connect-mock").click();
+  await page.getByTestId("connect-wallet").click();
 
   // With no node to read `governance()` from, the console says so rather than opening.
   await expect(page.getByTestId("chain-unreachable")).toBeVisible();
