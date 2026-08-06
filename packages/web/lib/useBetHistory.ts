@@ -126,7 +126,7 @@ export function useBetHistory(address: Address | undefined) {
           functionName: "bets",
           args: [betId],
         });
-        const [, rawTier, stake, clientSeed, , , commit, reveal] = bet;
+        const [, rawTier, , , stake, clientSeed, commit, reveal] = bet;
         const tier = Number(rawTier);
         setDrafts((draft) => {
           const key = betId.toString();
