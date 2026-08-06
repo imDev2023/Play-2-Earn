@@ -6,6 +6,7 @@ import { getPublicClient, readContract } from "wagmi/actions";
 import { useWatchContractEvent } from "wagmi";
 import { wagmiConfig } from "./wagmi";
 import { GAME_ABI, GAME_ADDRESS } from "./contracts";
+import { useStableCallback } from "./useStableCallback";
 
 /**
  * `refunded` is its own outcome, not a kind of loss and not a kind of pending.
@@ -132,26 +133,54 @@ type LogArgs = {
 };
 
 /**
- * Fold this player's logs into the draft with `apply`, collecting the bet ids
- * touched (so the caller can hydrate them). Shared by the BetPlaced and BetSettled
- * watchers, which differ only in how each log updates a bet.
+ * Whether this log is about `address`'s bet, and usable.
+ *
+ * Each side is required rather than compared optionally: `a?.x === b?.x` is true when
+ * both are undefined, so a log that carried no player would have matched a wallet that
+ * was not connected.
+ */
+function isPlayerLog(args: LogArgs, address: string | undefined): boolean {
+  if (args.betId === undefined || args.player === undefined || address === undefined) return false;
+  return args.player.toLowerCase() === address.toLowerCase();
+}
+
+/**
+ * The bet ids in `logs` belonging to `address`.
+ *
+ * Separate from the fold because the two are needed at different moments: the fold
+ * updates state, while these ids drive `hydrate`, which must be called from the event
+ * handler itself. Deriving them here keeps that call independent of when React chooses
+ * to run a state updater - reading them back out of one is not sound, because an
+ * updater can be deferred, and then the hydrate pass silently does nothing.
+ */
+export function playerBetIds(
+  logs: readonly { args: LogArgs }[],
+  address: string | undefined,
+): bigint[] {
+  const ids: bigint[] = [];
+  for (const log of logs) {
+    if (isPlayerLog(log.args, address)) ids.push(log.args.betId as bigint);
+  }
+  return ids;
+}
+
+/**
+ * Fold this player's logs into the draft with `apply`. Shared by the BetPlaced,
+ * BetSettled and BetRefunded watchers, which differ only in how each log updates a bet.
  */
 function foldPlayerLogs(
   draft: Draft,
   logs: readonly { args: LogArgs }[],
   address: string | undefined,
   apply: (draft: Draft, betId: bigint, args: LogArgs) => Draft,
-): { draft: Draft; ids: bigint[] } {
+): Draft {
   let next = draft;
-  const ids: bigint[] = [];
   for (const log of logs) {
-    const args = log.args;
-    if (args.betId !== undefined && args.player?.toLowerCase() === address?.toLowerCase()) {
-      next = apply(next, args.betId, args);
-      ids.push(args.betId);
+    if (isPlayerLog(log.args, address)) {
+      next = apply(next, log.args.betId as bigint, log.args);
     }
   }
-  return { draft: next, ids };
+  return next;
 }
 
 /**
@@ -268,18 +297,29 @@ export function useBetHistory(address: Address | undefined) {
 
   // Fold matching logs into the draft, then hydrate the touched bets so tier/stake
   // stay authoritative even if a BetPlaced event was missed or arrived out of order.
-  const watch = useCallback(
+  // The ids come from the logs rather than back out of the state updater, so hydration
+  // does not depend on when React runs it.
+  const receive = useCallback(
     (apply: (draft: Draft, betId: bigint, args: LogArgs) => Draft) =>
       (logs: readonly { args: LogArgs }[]) => {
-        let ids: bigint[] = [];
-        setDrafts((draft) => {
-          const folded = foldPlayerLogs(draft, logs, address, apply);
-          ids = folded.ids;
-          return folded.draft;
-        });
-        ids.forEach(hydrate);
+        setDrafts((draft) => foldPlayerLogs(draft, logs, address, apply));
+        playerBetIds(logs, address).forEach(hydrate);
       },
     [address, hydrate],
+  );
+
+  // Held stable for the component's whole life, not merely memoised: wagmi resubscribes
+  // whenever `onLogs` changes identity, and a log landing in that gap is lost. See
+  // useStableCallback. This screen re-renders on every block while a bet is pending, so
+  // the gap is widest exactly when BetPlaced and BetSettled arrive.
+  const onPlaced = useStableCallback((logs: readonly { args: LogArgs }[]) =>
+    receive(place)(logs),
+  );
+  const onSettled = useStableCallback((logs: readonly { args: LogArgs }[]) =>
+    receive(settle)(logs),
+  );
+  const onRefunded = useStableCallback((logs: readonly { args: LogArgs }[]) =>
+    receive(refundEntry)(logs),
   );
 
   useWatchContractEvent({
@@ -287,7 +327,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetPlaced",
     enabled: Boolean(address),
-    onLogs: watch(place),
+    onLogs: onPlaced,
   });
 
   useWatchContractEvent({
@@ -295,7 +335,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetSettled",
     enabled: Boolean(address),
-    onLogs: watch(settle),
+    onLogs: onSettled,
   });
 
   useWatchContractEvent({
@@ -303,7 +343,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetRefunded",
     enabled: Boolean(address),
-    onLogs: watch(refundEntry),
+    onLogs: onRefunded,
   });
 
   const history = useMemo(

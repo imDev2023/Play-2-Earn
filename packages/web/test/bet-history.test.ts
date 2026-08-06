@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { foldBetLogs } from "../lib/useBetHistory";
+import { foldBetLogs, playerBetIds } from "../lib/useBetHistory";
 
 /**
  * A refunded bet used to read "pending" for ever.
@@ -65,5 +65,57 @@ describe("bet history outcomes", () => {
     ]);
     assert.equal(history[0].outcome, "refunded");
     assert.equal(history[0].stake, RUSH(100n));
+  });
+});
+
+/**
+ * The ids driving `hydrate`, which is the recovery path for a bet whose events this
+ * session missed.
+ *
+ * These used to be read back out of a `setDrafts` updater, which React is free to defer
+ * - so by the time the handler asked for them the list was still empty and the whole
+ * hydrate pass quietly did nothing. Deriving them from the logs is what makes the call
+ * independent of React's scheduling, so they are worth pinning here.
+ */
+describe("playerBetIds", () => {
+  const OTHER = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
+
+  it("returns the ids of this player's logs, in order", () => {
+    assert.deepEqual(
+      playerBetIds(
+        [{ args: { betId: 7n, player: PLAYER } }, { args: { betId: 9n, player: PLAYER } }],
+        PLAYER,
+      ),
+      [7n, 9n],
+    );
+  });
+
+  it("ignores another player's logs", () => {
+    // The events are chain-wide, so somebody else settling must not pull this player's
+    // screen into hydrating a bet that is none of its business.
+    assert.deepEqual(
+      playerBetIds(
+        [{ args: { betId: 7n, player: OTHER } }, { args: { betId: 9n, player: PLAYER } }],
+        PLAYER,
+      ),
+      [9n],
+    );
+  });
+
+  it("matches regardless of address casing", () => {
+    assert.deepEqual(
+      playerBetIds([{ args: { betId: 7n, player: PLAYER.toLowerCase() } }], PLAYER.toUpperCase()),
+      [7n],
+    );
+  });
+
+  it("returns nothing when there is no connected address", () => {
+    // Guards against the undefined-equals-undefined trap: a log with no player must not
+    // match a disconnected wallet.
+    assert.deepEqual(playerBetIds([{ args: { betId: 7n } }], undefined), []);
+  });
+
+  it("skips a log with no betId", () => {
+    assert.deepEqual(playerBetIds([{ args: { player: PLAYER } }], PLAYER), []);
   });
 });

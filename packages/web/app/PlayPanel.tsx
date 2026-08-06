@@ -32,6 +32,7 @@ import { approvalAmount, betsCovered } from "../lib/approval";
 import { betFailure, type BetFailure } from "../lib/errors";
 import { betBoundsLabel, formatAmount } from "../lib/amount";
 import { settlementState, type SettlementState } from "../lib/settlement";
+import { useStableCallback } from "../lib/useStableCallback";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
 import { NetworkOnboarding } from "../components/NetworkOnboarding";
@@ -197,53 +198,67 @@ export function PlayPanel() {
   const lowBalance = balance !== undefined && minBet !== undefined && balance < minBet;
 
   // Watch for this player's settlement and surface win/loss + payout.
+  //
+  // Both handlers below are held stable rather than written inline: wagmi resubscribes
+  // whenever `onLogs` changes identity, and a log emitted during that gap never
+  // arrives. An inline arrow is a new identity every render, and this screen now
+  // re-renders on every block while a bet is pending - which is precisely when the
+  // settlement it is waiting for lands. See lib/useStableCallback.
+  const onSettledLog = useStableCallback((logs: readonly { args: unknown }[]) => {
+    for (const log of logs) {
+      const { player, win, payout } = log.args as {
+        player?: string;
+        win?: boolean;
+        payout?: bigint;
+      };
+      if (isMine(player) && win !== undefined) {
+        setResult({ win, payout: payout ?? 0n });
+        setStatus("idle");
+        setPending(null);
+        void refetchBalance();
+        // Settling advanced the chain head; the panel should show the new one.
+        void refetchCommit();
+      }
+    }
+  });
+
   useWatchContractEvent({
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetSettled",
     enabled: isConnected,
-    onLogs: (logs) => {
-      for (const log of logs) {
-        const { player, win, payout } = log.args as {
-          player?: string;
-          win?: boolean;
-          payout?: bigint;
-        };
-        if (isMine(player) && win !== undefined) {
-          setResult({ win, payout: payout ?? 0n });
-          setStatus("idle");
-          setPending(null);
-          void refetchBalance();
-          // Settling advanced the chain head; the panel should show the new one.
-          void refetchCommit();
-        }
-      }
-    },
+    onLogs: onSettledLog,
   });
 
   // A refunded bet never settles, so it never emits BetSettled. Without this the draw
   // would keep animating after the stake had already been returned - and a refund can
   // be triggered by anyone, not only by the button below.
+  //
+  // This one closed over `pending`, so before being pinned it changed identity the
+  // moment a bet started pending: it resubscribed exactly as the bet it watches for
+  // became refundable.
+  const onRefundedLog = useStableCallback((logs: readonly { args: unknown }[]) => {
+    for (const log of logs) {
+      const { player, betId } = log.args as { player?: string; betId?: bigint };
+      if (isMine(player) && betId === pending?.betId) {
+        setPending(null);
+        setStatus("idle");
+        setResult(null);
+        setFailure({
+          message: "Nothing settled your bet in time, so your stake was returned.",
+          tone: "neutral",
+        });
+        void refetchBalance();
+      }
+    }
+  });
+
   useWatchContractEvent({
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetRefunded",
     enabled: isConnected && pending !== null,
-    onLogs: (logs) => {
-      for (const log of logs) {
-        const { player, betId } = log.args as { player?: string; betId?: bigint };
-        if (isMine(player) && betId === pending?.betId) {
-          setPending(null);
-          setStatus("idle");
-          setResult(null);
-          setFailure({
-            message: "Nothing settled your bet in time, so your stake was returned.",
-            tone: "neutral",
-          });
-          void refetchBalance();
-        }
-      }
-    },
+    onLogs: onRefundedLog,
   });
 
   async function placeBet() {
