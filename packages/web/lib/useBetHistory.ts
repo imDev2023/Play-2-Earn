@@ -45,6 +45,12 @@ const BET_REFUNDED = parseAbiItem(
 
 type Draft = Map<string, BetEntry>;
 
+/** How one event updates a bet. The three watchers differ only in this. */
+type Reducer = (draft: Draft, betId: bigint, args: LogArgs) => Draft;
+
+/** A batch of decoded logs as wagmi hands them to `onLogs`. */
+type PlayerLogs = readonly { args: LogArgs }[];
+
 function place(draft: Draft, betId: bigint, args: LogArgs): Draft {
   const key = betId.toString();
   const next = new Map(draft);
@@ -144,6 +150,47 @@ function isPlayerLog(args: LogArgs, address: string | undefined): boolean {
   return args.player.toLowerCase() === address.toLowerCase();
 }
 
+/** The fairness-bearing fields of a `bets(betId)` record. */
+export interface ChainBet {
+  tier: number;
+  stake: bigint;
+  clientSeed: bigint;
+  commit: Hex;
+  reveal: Hex;
+}
+
+/**
+ * `existing` brought up to date with a `bets()` read, never losing ground.
+ *
+ * A hydrate read races the events it exists to back up: it is a snapshot taken before
+ * the reply landed, so it can predate a settlement whose `BetSettled` has already been
+ * folded in. Writing its fields straight over the entry then erased a reveal the event
+ * had already supplied, and `verifyInputsFor` needs all of clientSeed, commit and
+ * reveal - so the fairness verdict vanished from a row that had just shown one. The
+ * chain is authoritative about what it knows; it is not authoritative about what it has
+ * not caught up to yet, so an absent field never overwrites a present one.
+ *
+ * Returns `existing` itself when nothing changed, so the caller can skip the update.
+ */
+export function hydrateEntry(existing: BetEntry, chain: ChainBet): BetEntry {
+  const merged: BetEntry = {
+    ...existing,
+    tier: chain.tier,
+    stake: chain.stake,
+    clientSeed: chain.clientSeed ?? existing.clientSeed,
+    commit: nonZero(chain.commit) ?? existing.commit,
+    // An unsettled (or refunded) bet consumed no reveal, so the slot reads as zero.
+    reveal: nonZero(chain.reveal) ?? existing.reveal,
+  };
+  const unchanged =
+    existing.tier === merged.tier &&
+    existing.stake === merged.stake &&
+    existing.clientSeed === merged.clientSeed &&
+    existing.commit === merged.commit &&
+    existing.reveal === merged.reveal;
+  return unchanged ? existing : merged;
+}
+
 /**
  * The bet ids in `logs` belonging to `address`.
  *
@@ -206,30 +253,15 @@ export function useBetHistory(address: Address | undefined) {
           args: [betId],
         });
         const [, rawTier, stake, clientSeed, , , commit, reveal] = bet;
-        const tier = Number(rawTier);
+        const chain = { tier: Number(rawTier), stake, clientSeed, commit, reveal };
         setDrafts((draft) => {
           const key = betId.toString();
           const existing = draft.get(key);
           if (!existing) return draft;
-          if (
-            existing.tier === tier &&
-            existing.stake === stake &&
-            existing.clientSeed === clientSeed &&
-            existing.commit === commit &&
-            existing.reveal === nonZero(reveal)
-          ) {
-            return draft;
-          }
+          const merged = hydrateEntry(existing, chain);
+          if (merged === existing) return draft;
           const next = new Map(draft);
-          next.set(key, {
-            ...existing,
-            tier,
-            stake,
-            clientSeed,
-            commit,
-            // An unsettled (or refunded) bet consumed no reveal, so the slot is zero.
-            reveal: nonZero(reveal),
-          });
+          next.set(key, merged);
           return next;
         });
       } catch {
@@ -299,28 +331,18 @@ export function useBetHistory(address: Address | undefined) {
   // stay authoritative even if a BetPlaced event was missed or arrived out of order.
   // The ids come from the logs rather than back out of the state updater, so hydration
   // does not depend on when React runs it.
-  const receive = useCallback(
-    (apply: (draft: Draft, betId: bigint, args: LogArgs) => Draft) =>
-      (logs: readonly { args: LogArgs }[]) => {
-        setDrafts((draft) => foldPlayerLogs(draft, logs, address, apply));
-        playerBetIds(logs, address).forEach(hydrate);
-      },
-    [address, hydrate],
-  );
-
   // Held stable for the component's whole life, not merely memoised: wagmi resubscribes
   // whenever `onLogs` changes identity, and a log landing in that gap is lost. See
   // useStableCallback. This screen re-renders on every block while a bet is pending, so
   // the gap is widest exactly when BetPlaced and BetSettled arrive.
-  const onPlaced = useStableCallback((logs: readonly { args: LogArgs }[]) =>
-    receive(place)(logs),
-  );
-  const onSettled = useStableCallback((logs: readonly { args: LogArgs }[]) =>
-    receive(settle)(logs),
-  );
-  const onRefunded = useStableCallback((logs: readonly { args: LogArgs }[]) =>
-    receive(refundEntry)(logs),
-  );
+  const receive = useStableCallback((logs: readonly { args: LogArgs }[], apply: Reducer) => {
+    setDrafts((draft) => foldPlayerLogs(draft, logs, address, apply));
+    playerBetIds(logs, address).forEach(hydrate);
+  });
+
+  const onPlaced = useStableCallback((logs: PlayerLogs) => receive(logs, place));
+  const onSettled = useStableCallback((logs: PlayerLogs) => receive(logs, settle));
+  const onRefunded = useStableCallback((logs: PlayerLogs) => receive(logs, refundEntry));
 
   useWatchContractEvent({
     address: GAME_ADDRESS,
