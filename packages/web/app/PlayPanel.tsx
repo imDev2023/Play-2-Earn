@@ -224,23 +224,21 @@ export function PlayPanel() {
   // arrives. An inline arrow is a new identity every render, and this screen now
   // re-renders on every block while a bet is pending - which is precisely when the
   // settlement it is waiting for lands. See lib/useStableCallback.
-  const onSettledLog = useStableCallback((logs: readonly { args: unknown }[]) => {
-    for (const log of logs) {
-      const { player, win, payout } = log.args as {
-        player?: string;
-        win?: boolean;
-        payout?: bigint;
-      };
-      if (isMine(player) && win !== undefined) {
-        setResult({ win, payout: payout ?? 0n });
-        setStatus("idle");
-        setPending(null);
-        void refetchBalance();
-        // Settling advanced the chain head; the panel should show the new one.
-        void refetchCommit();
+  const onSettledLog = useStableCallback(
+    (logs: readonly { args: { player?: string; win?: boolean; payout?: bigint } }[]) => {
+      for (const log of logs) {
+        const { player, win, payout } = log.args;
+        if (isMine(player) && win !== undefined) {
+          setResult({ win, payout: payout ?? 0n });
+          setStatus("idle");
+          setPending(null);
+          void refetchBalance();
+          // Settling advanced the chain head; the panel should show the new one.
+          void refetchCommit();
+        }
       }
-    }
-  });
+    },
+  );
 
   useWatchContractEvent({
     chainId: activeChainId,
@@ -258,21 +256,23 @@ export function PlayPanel() {
   // This one closed over `pending`, so before being pinned it changed identity the
   // moment a bet started pending: it resubscribed exactly as the bet it watches for
   // became refundable.
-  const onRefundedLog = useStableCallback((logs: readonly { args: unknown }[]) => {
-    for (const log of logs) {
-      const { player, betId } = log.args as { player?: string; betId?: bigint };
-      if (isMine(player) && betId === pending?.betId) {
-        setPending(null);
-        setStatus("idle");
-        setResult(null);
-        setFailure({
-          message: "Nothing settled your bet in time, so your stake was returned.",
-          tone: "neutral",
-        });
-        void refetchBalance();
+  const onRefundedLog = useStableCallback(
+    (logs: readonly { args: { player?: string; betId?: bigint } }[]) => {
+      for (const log of logs) {
+        const { player, betId } = log.args;
+        if (isMine(player) && betId === pending?.betId) {
+          setPending(null);
+          setStatus("idle");
+          setResult(null);
+          setFailure({
+            message: "Nothing settled your bet in time, so your stake was returned.",
+            tone: "neutral",
+          });
+          void refetchBalance();
+        }
       }
-    }
-  });
+    },
+  );
 
   useWatchContractEvent({
     chainId: activeChainId,

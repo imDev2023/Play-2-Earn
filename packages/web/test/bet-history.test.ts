@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
-import { foldBetLogs, playerBetIds } from "../lib/useBetHistory";
+import { foldBetLogs, hydrateEntry, playerBetIds } from "../lib/useBetHistory";
 
 /**
  * A refunded bet used to read "pending" for ever.
@@ -117,5 +117,78 @@ describe("playerBetIds", () => {
 
   it("skips a log with no betId", () => {
     assert.deepEqual(playerBetIds([{ args: { player: PLAYER } }], PLAYER), []);
+  });
+});
+
+/**
+ * Hydration must never lose ground to the events it exists to back up.
+ *
+ * `hydrate` reads `bets(betId)` after a BetPlaced, and that read races the settlement:
+ * the reply is a snapshot from before it landed, so it can arrive after BetSettled has
+ * already supplied the reveal. Writing the snapshot straight over the row erased it, and
+ * `verifyInputsFor` needs clientSeed, commit and reveal together - so the fairness
+ * verdict disappeared from a row that had just shown one, which is the same symptom the
+ * dropped-subscription bug produced, reached from the other side.
+ */
+describe("hydrateEntry", () => {
+  const ZERO = `0x${"0".repeat(64)}` as const;
+  const COMMIT = `0x${"ab".repeat(32)}` as const;
+  const REVEAL = `0x${"cd".repeat(32)}` as const;
+
+  const settled = {
+    betId: 40n,
+    tier: 0,
+    stake: RUSH(100n),
+    outcome: "won" as const,
+    payout: RUSH(190n),
+    clientSeed: 7n,
+    commit: COMMIT,
+    reveal: REVEAL,
+  };
+
+  it("keeps a reveal the event supplied when the chain read predates settlement", () => {
+    const merged = hydrateEntry(settled, {
+      tier: 0,
+      stake: RUSH(100n),
+      clientSeed: 7n,
+      commit: COMMIT,
+      // The read was taken while the bet was still unsettled, so the slot is zero.
+      reveal: ZERO,
+    });
+    assert.equal(merged.reveal, REVEAL);
+  });
+
+  it("supplies a reveal the events never delivered", () => {
+    const pending = { ...settled, outcome: "pending" as const, reveal: undefined };
+    const merged = hydrateEntry(pending, {
+      tier: 0,
+      stake: RUSH(100n),
+      clientSeed: 7n,
+      commit: COMMIT,
+      reveal: REVEAL,
+    });
+    assert.equal(merged.reveal, REVEAL);
+  });
+
+  it("returns the same object when nothing changed, so the row does not re-render", () => {
+    const merged = hydrateEntry(settled, {
+      tier: 0,
+      stake: RUSH(100n),
+      clientSeed: 7n,
+      commit: COMMIT,
+      reveal: REVEAL,
+    });
+    assert.equal(merged, settled);
+  });
+
+  it("does not erase a commit with an empty slot", () => {
+    const merged = hydrateEntry(settled, {
+      tier: 0,
+      stake: RUSH(100n),
+      clientSeed: 7n,
+      commit: ZERO,
+      reveal: REVEAL,
+    });
+    assert.equal(merged.commit, COMMIT);
   });
 });
