@@ -16,7 +16,8 @@ It deliberately does not restate what the linked files already say.
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `web3-security.md` | Four links, untracked at the repo root. Three are Solidity-only; SlowMist's front-end section is *only* HTTP security headers (PR #46). The one that bites client code is Consensys "Timestamp Dependence": the 15-second rule. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule, installed 2026-08-06 at profile `robinhood-4663`. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `web3-security.md` | Untracked at the repo root, four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
 
 ## Deployment reality
 
@@ -29,28 +30,19 @@ It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken a
 
 ## Traps that cost time
 
-**The `bets()` tuple is destructured positionally, in five places.**
-viem returns an array and the relayer uses a hand-written ethers fragment, so reordering the struct decodes every field into its neighbour without throwing.
+**The `bets()` tuple decodes positionally, so a reorder puts every field in its neighbour without throwing.**
 An address is still an address.
-The consumers are listed in the PR #48 body; two of them were missed on the first pass and caught only by review.
-`packages/web/test/contracts.test.ts` and the hand-written-ABI test in `packages/contracts/test/RelayerService.ts` now guard it.
+Contract tests cannot catch it: Typechain returns structs as named tuples, so they pass whatever the order is.
+That is why every guard lives in the web package or in an explicitly hand-written-ABI test.
 
-**This trap bit again inside the helper written to prevent it.**
-`toBetView` (#51) exists to name those fields once, and its first revision destructured the tuple by position, like everything else.
-#48 repacks the struct to `player, tier, settled, placedAt, stake, ...`; the two PRs touch different lines of `contracts.ts`, so they would have merged clean and left the helper reading `settled` out of the stake slot.
-That is a truthy bigint, so pending-bet recovery would have bailed on every unsettled bet and the settlement panel would never have returned after a reload.
-The second revision fixed the order and still shipped the same class of hole by another route: it widened the parameter to `readonly unknown[]` and returned an unchecked cast, so nothing checked *names* and nothing checked the call site.
-Neither revision was caught by a test. Both were caught by reviewing the fix, which is the whole argument for the cadence below.
+**The rule: any `bets()` consumer derives its field order from the ABI and never hard-codes one.**
+Enforced by `packages/web/test/abi-matches-artifact.test.ts` (#53), which compares `GAME_ABI` and `RUSH_ABI` against the compiled artifacts, and by `toBetView` / `BetViewNamesMatchAbi` / `RawBet` in `lib/contracts.ts` (#51). Read those files rather than this paragraph.
+Four positional call sites remain by choice - `VerifyTool.tsx`, `useBetHistory.ts`, `useRelayerHealth.ts` twice - because #48 is repacking the struct. Migrate them once it lands.
 
-The rule this leaves: **any new `bets()` consumer derives its field order from the ABI and never hard-codes one.**
-`toBetView` now zips against the `bets()` entry in `GAME_ABI`, the same declaration viem decodes against, so the two cannot disagree about order.
-Names are pinned separately by `BetViewNamesMatchAbi`, a compile-time assertion that `BetView`'s keys and the ABI's declared output names are the same set; without it a rename leaves the field `undefined` on every decoded bet and the cast hides it.
-`RawBet` is `ReadContractReturnType<typeof GAME_ABI, "bets">` rather than a hand-written tuple, so a reorder retypes the call site too.
-What none of that checks is the hand-written `GAME_ABI` drifting from `RushoodGame.sol`; that is `test/contracts.test.ts`, which lives on #48.
-
-**Contract tests cannot catch a field reorder.**
-Typechain returns Solidity structs as named tuples, so they pass whatever the order is.
-That is why the guards above live in the web package and in an explicitly hand-written-ABI test.
+**This trap bit twice inside the helpers written to prevent it, and that is the durable lesson.**
+`toBetView`'s first revision destructured by position; its second fixed the order and still shipped an unchecked cast so nothing checked *names*.
+Then #53, the guard for exactly this, shipped ignoring `indexed` and treating event argument names as documentation - and viem returns `log.args` as an object, so `useBetHistory` reads them by name.
+No test caught any of the three. Review caught all three, which is the whole argument for the cadence below.
 
 **The two e2e suites want opposite worlds.**
 `playwright.config.ts` asserts the disconnected UI and its admin specs assert the chain is *unreachable*, so it needs the Hardhat node stopped.
@@ -81,6 +73,17 @@ Size is not a proxy for risk: "it is small" is the reasoning that shipped #48 re
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is.
 PR #48 sat red for a day behind a body that said "typecheck clean".
+
+**Chain 4663 has no randomness, and that is why this game is shaped as it is.**
+`packages/contracts/lib/evm-security-standards/profiles/robinhood-4663.md` is the authority; read it before answering any chain question, never from general knowledge.
+It confirms `prevrandao` is a constant and there is no VRF on the production path, so the bespoke commit-reveal is not over-engineering, it is the only option.
+The profile's headline hazard, the ERC-8056 multiplier, **does not apply here**: no contract reads a price. The gate blocks on it anyway, so it wants a written waiver, not a fix.
+Two answers in that profile are still `OPEN:` - re-org depth, and the sequencer uptime feed address. Do not invent either.
+
+**The security gate is installed but unwired.**
+`python3 lib/evm-security-standards/gate/check.py --project .` from `packages/contracts`.
+Last run: 11 pass, 8 fail, 41 unanswered - which reads as "never filled in", not "broken". Slither passes by hand (one medium finding, in a mock); the gate fails it only because CI records no evidence into `.evm-standards.json`.
+The one real code finding: **`evmVersion` is unset in `hardhat.config.ts`**, silently defaulting to `paris`, and the profile says set it explicitly. The supported version for 4663 is not documented there, so it needs a research pass, not a guess.
 
 **Check for path collisions before adding a file while another PR is in review.**
 `git diff main...<other-branch> --stat` .
