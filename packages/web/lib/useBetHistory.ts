@@ -7,7 +7,14 @@ import { useWatchContractEvent } from "wagmi";
 import { wagmiConfig } from "./wagmi";
 import { GAME_ABI, GAME_ADDRESS } from "./contracts";
 
-export type BetOutcome = "pending" | "won" | "lost";
+/**
+ * `refunded` is its own outcome, not a kind of loss and not a kind of pending.
+ *
+ * A refunded bet never settles, so it never emits `BetSettled` and history left it
+ * reading "pending" for ever - about a bet whose stake is already back in the player's
+ * wallet. Folding it into "lost" would be worse: the player lost nothing.
+ */
+export type BetOutcome = "pending" | "won" | "lost" | "refunded";
 
 export interface BetEntry {
   betId: bigint;
@@ -30,6 +37,9 @@ const BET_PLACED = parseAbiItem(
 );
 const BET_SETTLED = parseAbiItem(
   "event BetSettled(uint256 indexed betId, address indexed player, bool win, uint256 payout, bytes32 reveal, uint256 roll)",
+);
+const BET_REFUNDED = parseAbiItem(
+  "event BetRefunded(uint256 indexed betId, address indexed player, uint256 amount)",
 );
 
 type Draft = Map<string, BetEntry>;
@@ -68,8 +78,48 @@ function settle(draft: Draft, betId: bigint, args: LogArgs): Draft {
   return next;
 }
 
+/**
+ * The stake came back, so the bet is closed with no roll and nothing to verify: the
+ * reveal was never consumed, which is why `refund` leaves the chain head where it is.
+ */
+function refundEntry(draft: Draft, betId: bigint, args: LogArgs): Draft {
+  const key = betId.toString();
+  const next = new Map(draft);
+  const existing = next.get(key);
+  next.set(key, {
+    ...existing,
+    betId,
+    tier: existing?.tier ?? 0,
+    stake: existing?.stake ?? args.amount ?? 0n,
+    outcome: "refunded",
+    payout: args.amount ?? existing?.stake ?? 0n,
+  });
+  return next;
+}
+
+/**
+ * The three reducers applied in order, as a pure function over a log sequence.
+ *
+ * The hook itself is all wagmi subscriptions and effects, so the part worth testing -
+ * which event closes a bet, and as what - is exposed here rather than left reachable
+ * only through a rendered component.
+ */
+export function foldBetLogs(
+  logs: readonly { kind: "placed" | "settled" | "refunded"; args: LogArgs }[],
+): BetEntry[] {
+  let draft: Draft = new Map();
+  for (const { kind, args } of logs) {
+    if (args.betId === undefined) continue;
+    const apply = kind === "placed" ? place : kind === "settled" ? settle : refundEntry;
+    draft = apply(draft, args.betId, args);
+  }
+  return [...draft.values()].sort((a, b) => (b.betId > a.betId ? 1 : b.betId < a.betId ? -1 : 0));
+}
+
 type LogArgs = {
   betId?: bigint;
+  /** BetRefunded only: the stake returned to the player. */
+  amount?: bigint;
   player?: string;
   tier?: number;
   stake?: bigint;
@@ -169,7 +219,7 @@ export function useBetHistory(address: Address | undefined) {
       try {
         const client = getPublicClient(wagmiConfig);
         if (!client) return;
-        const [placed, settled] = await Promise.all([
+        const [placed, settled, refunded] = await Promise.all([
           client.getLogs({
             address: GAME_ADDRESS,
             event: BET_PLACED,
@@ -184,6 +234,13 @@ export function useBetHistory(address: Address | undefined) {
             fromBlock: 0n,
             toBlock: "latest",
           }),
+          client.getLogs({
+            address: GAME_ADDRESS,
+            event: BET_REFUNDED,
+            args: { player: address },
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
         ]);
         if (cancelled) return;
         setDrafts((prev) => {
@@ -193,6 +250,10 @@ export function useBetHistory(address: Address | undefined) {
           }
           for (const log of settled) {
             if (log.args.betId !== undefined) draft = settle(draft, log.args.betId, log.args);
+          }
+          // Last, so a refund is never overwritten by the BetPlaced that preceded it.
+          for (const log of refunded) {
+            if (log.args.betId !== undefined) draft = refundEntry(draft, log.args.betId, log.args);
           }
           return draft;
         });
@@ -235,6 +296,14 @@ export function useBetHistory(address: Address | undefined) {
     eventName: "BetSettled",
     enabled: Boolean(address),
     onLogs: watch(settle),
+  });
+
+  useWatchContractEvent({
+    address: GAME_ADDRESS,
+    abi: GAME_ABI,
+    eventName: "BetRefunded",
+    enabled: Boolean(address),
+    onLogs: watch(refundEntry),
   });
 
   const history = useMemo(

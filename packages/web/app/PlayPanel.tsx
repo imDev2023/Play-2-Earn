@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
-import { formatUnits, parseUnits } from "viem";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import {
   useAccount,
+  useBlock,
   useChainId,
   useConnect,
   useDisconnect,
@@ -11,7 +12,7 @@ import {
   useWatchContractEvent,
   useWriteContract,
 } from "wagmi";
-import { readContract, waitForTransactionReceipt } from "wagmi/actions";
+import { getBlock, readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../lib/wagmi";
 import { ACTIVE_CHAIN_ID } from "../lib/chain";
 import {
@@ -23,16 +24,20 @@ import {
   RUSH_ABI,
   RUSH_ADDRESS,
   TIERS,
+  toBetView,
 } from "../lib/contracts";
 import { useBetHistory } from "../lib/useBetHistory";
 import { betBlock, betBlockMessage } from "../lib/bet-validity";
 import { approvalAmount, betsCovered } from "../lib/approval";
-import { readableError } from "../lib/errors";
+import { betFailure, type BetFailure } from "../lib/errors";
+import { betBoundsLabel, formatAmount } from "../lib/amount";
+import { settlementState, type SettlementState } from "../lib/settlement";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
 import { NetworkOnboarding } from "../components/NetworkOnboarding";
 import { BuyRush } from "../components/BuyRush";
 import { Reveal, type RevealPhase } from "../components/Reveal";
+import { SettlementHelp } from "../components/SettlementHelp";
 import { BetHistory } from "../components/BetHistory";
 import { FairnessPanel } from "../components/FairnessPanel";
 
@@ -59,7 +64,13 @@ export function PlayPanel() {
 
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<Result | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<BetFailure | null>(null);
+  // The bet now waiting on a relayer, so the screen can explain the wait and offer the
+  // contract's refund instead of animating indefinitely. Null whenever nothing is
+  // pending, which is the normal case.
+  const [pending, setPending] = useState<{ betId: bigint; placedAt: number } | null>(null);
+  const [refunding, setRefunding] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
   const [tier, setTier] = useState(0);
   // The tier of the bet currently settling - captured at placement so the reveal
   // describes the settled bet, not whatever the ladder is showing now.
@@ -70,6 +81,19 @@ export function PlayPanel() {
   const [approvalBets, setApprovalBets] = useState(0);
 
   const wrongNetwork = isConnected && chainId !== ACTIVE_CHAIN_ID;
+
+  // Every event this panel watches is chain-wide, so each handler has to ask whether the
+  // log is about the connected player. Asking it the same way in one place keeps the
+  // settle, refund and recovery paths from drifting on address casing.
+  // Memoised on the address alone: the recovery effect depends on it, and a fresh
+  // closure each render would re-run that effect on every render.
+  const isMine = useCallback(
+    (player: string | undefined) =>
+      player !== undefined &&
+      address !== undefined &&
+      player.toLowerCase() === address.toLowerCase(),
+    [address],
+  );
 
   const { history } = useBetHistory(address);
 
@@ -92,6 +116,59 @@ export function PlayPanel() {
     abi: GAME_ABI,
     functionName: "maxBet",
     args: [tier],
+  });
+
+  // Somebody watching a draw that never resolves will reload the page, and that is
+  // exactly the moment the refund has to still be on offer. React state does not
+  // survive a reload, so the pending bet is recovered from the chain: `activeBetId` is
+  // the single unsettled bet, by the contract's own invariant.
+  const { data: activeBetId } = useReadContract({
+    address: GAME_ADDRESS,
+    abi: GAME_ABI,
+    functionName: "activeBetId",
+    query: { enabled: isConnected && pending === null, refetchInterval: 5_000 },
+  });
+
+  useEffect(() => {
+    if (pending !== null || !address || !activeBetId) return;
+    let cancelled = false;
+    (async () => {
+      const raw = await readContract(wagmiConfig, {
+        address: GAME_ADDRESS,
+        abi: GAME_ABI,
+        functionName: "bets",
+        args: [activeBetId],
+      });
+      const bet = toBetView(raw);
+      // Somebody else's bet is none of this screen's business, and a settled one needs
+      // no help.
+      if (cancelled || bet.settled) return;
+      if (!isMine(bet.player)) return;
+      setPending({ betId: activeBetId, placedAt: Number(bet.placedAt) });
+      setStatus("waiting");
+      setBetTier(bet.tier);
+    })().catch(() => {
+      // Best-effort recovery; a failed read leaves the screen exactly as it was.
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBetId, address, pending, isMine]);
+
+  // Chain time, watched only while a bet is pending. The countdown has to agree with
+  // the contract that enforces it: a refund button that unlocks a minute before
+  // `refund` will accept the call is worse than one that unlocks a minute late.
+  const { data: head } = useBlock({
+    watch: pending !== null,
+    query: { enabled: pending !== null },
+  });
+
+  // The refund deadline the contract will actually enforce, rather than an hour
+  // hard-coded here that would drift if the constant ever moved.
+  const { data: settleTimeout } = useReadContract({
+    address: GAME_ADDRESS,
+    abi: GAME_ABI,
+    functionName: "SETTLE_TIMEOUT",
   });
 
   // The commitment the *next* bet locks against, so a player can record it before
@@ -132,9 +209,10 @@ export function PlayPanel() {
           win?: boolean;
           payout?: bigint;
         };
-        if (player?.toLowerCase() === address?.toLowerCase() && win !== undefined) {
+        if (isMine(player) && win !== undefined) {
           setResult({ win, payout: payout ?? 0n });
           setStatus("idle");
+          setPending(null);
           void refetchBalance();
           // Settling advanced the chain head; the panel should show the new one.
           void refetchCommit();
@@ -143,10 +221,37 @@ export function PlayPanel() {
     },
   });
 
+  // A refunded bet never settles, so it never emits BetSettled. Without this the draw
+  // would keep animating after the stake had already been returned - and a refund can
+  // be triggered by anyone, not only by the button below.
+  useWatchContractEvent({
+    address: GAME_ADDRESS,
+    abi: GAME_ABI,
+    eventName: "BetRefunded",
+    enabled: isConnected && pending !== null,
+    onLogs: (logs) => {
+      for (const log of logs) {
+        const { player, betId } = log.args as { player?: string; betId?: bigint };
+        if (isMine(player) && betId === pending?.betId) {
+          setPending(null);
+          setStatus("idle");
+          setResult(null);
+          setFailure({
+            message: "Nothing settled your bet in time, so your stake was returned.",
+            tone: "neutral",
+          });
+          void refetchBalance();
+        }
+      }
+    },
+  });
+
   async function placeBet() {
     if (!stake || block !== null || wrongNetwork) return;
-    setError(null);
+    setFailure(null);
+    setRefundError(null);
     setResult(null);
+    setPending(null);
     setBetTier(tier);
     try {
       const allowance = address
@@ -179,16 +284,55 @@ export function PlayPanel() {
         functionName: "placeBet",
         args: [tier, stake, randomSeed()],
       });
-      await waitForTransactionReceipt(wagmiConfig, { hash: betHash });
+      const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: betHash });
+
+      // Identify the bet from its own BetPlaced log rather than by reading
+      // `activeBetId` afterwards: by the time a read lands the relayer may already have
+      // settled this bet and another player's may be active, and refunding a betId we
+      // guessed is the one mistake this feature must not make.
+      setPending(betPlacedFrom(receipt.logs, await blockTimestamp(receipt.blockNumber)));
 
       setStatus("waiting"); // relayer settles; BetSettled resets to idle.
     } catch (err) {
-      setError(readableError(err));
+      setFailure(betFailure(err));
       setStatus("error");
     }
   }
 
+  async function refundBet() {
+    if (!pending) return;
+    setRefundError(null);
+    setRefunding(true);
+    try {
+      const hash = await writeAsync({
+        address: GAME_ADDRESS,
+        abi: GAME_ABI,
+        functionName: "refund",
+        args: [pending.betId],
+      });
+      await waitForTransactionReceipt(wagmiConfig, { hash });
+      // BetRefunded clears the pending state, the same way BetSettled does for a win.
+    } catch (err) {
+      const { message } = betFailure(err);
+      setRefundError(message);
+    } finally {
+      setRefunding(false);
+    }
+  }
+
   const busy = status === "approving" || status === "placing" || status === "waiting";
+
+  // Only computable once the chain has told us all three; until then the draw is young
+  // enough that the plain reveal is the honest thing to show.
+  const settlement: SettlementState | null =
+    pending && head && settleTimeout !== undefined
+      ? settlementState({
+          placedAt: pending.placedAt,
+          now: Number(head.timestamp),
+          settleTimeout: Number(settleTimeout),
+        })
+      : null;
+
   const revealPhase: RevealPhase =
     status === "placing" || status === "waiting"
       ? "drawing"
@@ -249,6 +393,15 @@ export function PlayPanel() {
         <Reveal phase={revealPhase} tier={betTier} payout={result?.payout ?? 0n} />
       )}
 
+      {settlement && (
+        <SettlementHelp
+          state={settlement}
+          refunding={refunding}
+          onRefund={refundBet}
+          error={refundError}
+        />
+      )}
+
       <section style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
         <span style={label}>Pick your odds</span>
         <OddsLadder selected={tier} onSelect={setTier} disabled={busy} />
@@ -272,19 +425,26 @@ export function PlayPanel() {
           </div>
         </label>
 
-        <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "0.5rem" }}>
-          <span data-testid="bet-bounds" className="mono" style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
-            {minBet !== undefined && maxBet !== undefined
-              ? `min ${formatUnits(minBet, 18)} · max ${formatUnits(maxBet, 18)}`
-              : "…"}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+          }}
+        >
+          <span
+            data-testid="bet-bounds"
+            className="mono"
+            style={{ fontSize: "0.8rem", color: "var(--muted)" }}
+          >
+            {minBet !== undefined && maxBet !== undefined ? betBoundsLabel(minBet, maxBet) : "…"}
           </span>
           {potentialWin !== null && !belowMin && !aboveMax && (
             <span data-testid="potential-win" className="mono" style={{ fontSize: "0.85rem" }}>
               wins{" "}
-              <strong style={{ color: "var(--cool)" }}>
-                {formatUnits(potentialWin, 18)} RUSH
-              </strong>{" "}
-              at {multiplierLabel(tier)}
+              <strong style={{ color: "var(--cool)" }}>{formatAmount(potentialWin)} RUSH</strong> at{" "}
+              {multiplierLabel(tier)}
             </span>
           )}
         </div>
@@ -303,13 +463,24 @@ export function PlayPanel() {
         </button>
 
         {block && (
-          <p data-testid="bet-invalid" style={{ color: "var(--hot)", margin: 0, fontSize: "0.85rem" }}>
+          <p
+            data-testid="bet-invalid"
+            style={{ color: "var(--hot)", margin: 0, fontSize: "0.85rem" }}
+          >
             {betBlockMessage(block, balance)}
           </p>
         )}
-        {error && (
-          <p data-testid="error" style={{ color: "var(--hot)", margin: 0, fontSize: "0.85rem" }}>
-            {error}
+        {failure && (
+          <p
+            data-testid="error"
+            data-tone={failure.tone}
+            style={{
+              color: failure.tone === "error" ? "var(--hot)" : "var(--muted)",
+              margin: 0,
+              fontSize: "0.85rem",
+            }}
+          >
+            {failure.message}
           </p>
         )}
 
@@ -321,6 +492,40 @@ export function PlayPanel() {
       <BetHistory history={history} />
     </div>
   );
+}
+
+/**
+ * The bet this receipt created, read from its own `BetPlaced` log.
+ *
+ * The logs of one transaction are the only place the id is unambiguous. Other logs can
+ * share the block, so the topic is matched rather than the position taken on trust.
+ */
+function betPlacedFrom(
+  logs: readonly { address: string; topics: readonly string[]; data: string }[],
+  placedAt: number,
+): { betId: bigint; placedAt: number } | null {
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== GAME_ADDRESS.toLowerCase()) continue;
+    try {
+      const event = decodeEventLog({
+        abi: GAME_ABI,
+        topics: log.topics as [signature: `0x${string}`, ...args: `0x${string}`[]],
+        data: log.data as `0x${string}`,
+      });
+      if (event.eventName === "BetPlaced") {
+        return { betId: (event.args as { betId: bigint }).betId, placedAt };
+      }
+    } catch {
+      // Not one of ours; the receipt carries the token's Transfer logs too.
+    }
+  }
+  return null;
+}
+
+/** The chain's own clock at the block a bet landed in. */
+async function blockTimestamp(blockNumber: bigint): Promise<number> {
+  const block = await getBlock(wagmiConfig, { blockNumber });
+  return Number(block.timestamp);
 }
 
 function statusLabel(status: Status, approvalBets: number): string {
