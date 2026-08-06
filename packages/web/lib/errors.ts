@@ -31,6 +31,52 @@ function isUserRejection(error: unknown, depth = 0): boolean {
 }
 
 /**
+ * Did the person decline, by code or - for a wallet that drops the code - by wording?
+ *
+ * Both callers below ask exactly this, and they must keep agreeing: one decides whether
+ * a failed switch is worth reporting, the other whether a failed bet is coloured as a
+ * fault. If the two drifted apart, the same declined prompt would be silent on one
+ * screen and an error on the other.
+ */
+function declined(error: unknown, message: string): boolean {
+  return isUserRejection(error) || /user rejected|user denied|rejected the request/i.test(message);
+}
+
+/** What to tell the player after a bet attempt did not go through. */
+export type BetFailure = {
+  message: string;
+  /** A declined prompt is a decision, not a fault, and must not be coloured like one. */
+  tone: "error" | "neutral";
+};
+
+/**
+ * Why a bet did not happen, in words the player has a use for.
+ *
+ * Declining the wallet prompt is the case worth separating. It is not a failure at all
+ * - it is the player deciding not to spend - and the raw wording that reaches the UI
+ * ("User rejected the request.") is written from the wallet's point of view, names the
+ * player in the third person, and arrives in the same red as a genuine fault. Someone
+ * who deliberately backed out is told they did something wrong.
+ *
+ * Detected by the EIP-1193 code rather than the wording, for the reason
+ * `isUserRejection` documents: the wording is whatever the wallet's language happens to
+ * be, and matching English phrases would show a Spanish speaker a fault for a decision
+ * they made on purpose. The regex is a fallback for wallets that drop the code.
+ *
+ * Everything else keeps its message. A revert or an RPC failure is something the player
+ * needs, and inventing friendlier copy for it would hide the part that identifies it.
+ */
+export function betFailure(error: unknown): BetFailure {
+  const message = readableError(error);
+
+  if (declined(error, message)) {
+    return { message: "You declined the prompt, so no bet was placed.", tone: "neutral" };
+  }
+
+  return { message, tone: "error" };
+}
+
+/**
  * Why a network switch failed, in words that say what to do next.
  *
  * Switching is the one place the app asks the wallet to change its own configuration,
@@ -50,9 +96,7 @@ function isUserRejection(error: unknown, depth = 0): boolean {
 export function switchFailureMessage(error: unknown): string | null {
   const message = readableError(error);
 
-  if (isUserRejection(error) || /user rejected|user denied|rejected the request/i.test(message)) {
-    return null;
-  }
+  if (declined(error, message)) return null;
 
   if (/same rpc (endpoint|url)/i.test(message)) {
     return (

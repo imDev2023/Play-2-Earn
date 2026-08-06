@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import type { Address, ReadContractReturnType } from "viem";
 import { TIER_ODDS } from "@rushood/verifier";
 
 /**
@@ -88,6 +88,17 @@ export const GAME_ABI = [
       { name: "clientSeed", type: "uint256" },
     ],
     outputs: [{ name: "betId", type: "uint256" }],
+  },
+  {
+    // The player's way out of a settlement that never came. Callable by anyone once
+    // SETTLE_TIMEOUT has elapsed, and it works while paused, so an incident cannot
+    // strand a stake. It was missing from this ABI entirely, which meant the guarantee
+    // existed on-chain and nowhere a player could reach it.
+    type: "function",
+    name: "refund",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "betId", type: "uint256" }],
+    outputs: [],
   },
   // --- The admin/treasury console's read surface (#25) -----------------------------
   // Roles, live economics and the solvency numbers an operator needs to see before
@@ -291,6 +302,17 @@ export const GAME_ABI = [
       { name: "roll", type: "uint256", indexed: false },
     ],
   },
+  {
+    // A refunded bet never settles, so it never emits BetSettled. Without this the play
+    // screen would keep drawing after the stake had already been returned.
+    type: "event",
+    name: "BetRefunded",
+    inputs: [
+      { name: "betId", type: "uint256", indexed: true },
+      { name: "player", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+    ],
+  },
 ] as const;
 
 /** Minimal ERC20 ABI for reading balances and approving the game as spender. */
@@ -323,3 +345,87 @@ export const RUSH_ABI = [
     outputs: [{ type: "bool" }],
   },
 ] as const;
+
+/**
+ * One bet, by name - zipped against the ABI's own declared output names.
+ *
+ * `bets()` is a Solidity struct getter, so viem hands back a positional array, and this
+ * repo's sharpest edge is that reordering the struct decodes every field into its
+ * neighbour without throwing: an address is still an address and a uint is still a uint.
+ * Two consumers nearly shipped that way in #48 and review, not tests, caught both.
+ *
+ * The first attempt here destructured by position like everything else. That was the
+ * same bug wearing a helper's clothes: #48 repacks the struct to
+ * `player, tier, settled, placedAt, stake, ...`, and because the two changes touch
+ * different lines of this file they would have merged clean and left this reading
+ * `settled` out of the stake slot - a truthy bigint, so the pending-bet recovery would
+ * have bailed on every unsettled bet and the settlement panel would never reappear
+ * after a reload.
+ *
+ * So the mapping is not written down at all. It is read from the `bets()` entry in
+ * `GAME_ABI` above, which is the same declaration viem decodes against, so the two
+ * cannot disagree about *order*. `BetViewNamesMatchAbi` below extends that to *names*,
+ * and `RawBet` derives the argument type from the same entry, so a reorder retypes the
+ * call site too rather than silently accepting the old shape.
+ *
+ * What none of this can check is the hand-written `GAME_ABI` drifting from
+ * `RushoodGame.sol` itself. That guard is `packages/web/test/contracts.test.ts`, which
+ * lives on #48 because #48 creates the same path; until it merges, nothing on this
+ * branch pins the declared order to the contract.
+ *
+ * The four remaining positional call sites - `VerifyTool.tsx`, `useBetHistory.ts` and
+ * `useRelayerHealth.ts` (twice) - are deliberately left alone, because #48 is repacking
+ * that struct and rewriting them here would collide with a change in review. They should
+ * move onto this once #48 lands.
+ */
+export type BetView = {
+  player: Address;
+  tier: number;
+  stake: bigint;
+  clientSeed: bigint;
+  placedAt: bigint;
+  settled: boolean;
+  commit: `0x${string}`;
+  reveal: `0x${string}`;
+};
+
+type BetsAbi = Extract<(typeof GAME_ABI)[number], { name: "bets" }>;
+
+/**
+ * The field names `bets()` declares, in the order it returns them.
+ *
+ * Deliberately not widened to `string[]`: the literal union is what lets the compiler
+ * check `BetView` against it below.
+ */
+export const BETS_FIELDS: readonly BetsAbi["outputs"][number]["name"][] = GAME_ABI.find(
+  // Non-null because `GAME_ABI` is `as const` in this file: drop `bets()` from it and
+  // `BetsAbi` resolves to `never`, which makes `BetViewNamesMatchAbi` below a compile
+  // error. There is no build in which this find returns undefined.
+  (entry): entry is BetsAbi => entry.type === "function" && entry.name === "bets",
+)!.outputs.map((output) => output.name);
+
+/**
+ * `BetView`'s keys and the names `bets()` declares must be the same set, in either
+ * direction. Without this, renaming an output in the ABI would leave that field
+ * `undefined` on every decoded bet and the cast in `toBetView` would hide it - the same
+ * silent-wrong-field failure this whole helper exists to prevent, just by name instead
+ * of by position. It costs nothing at runtime; it is a compile error or it is nothing.
+ */
+type SameKeys<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type AssertTrue<T extends true> = T;
+export type BetViewNamesMatchAbi = AssertTrue<
+  SameKeys<keyof BetView, BetsAbi["outputs"][number]["name"]>
+>;
+
+/**
+ * Exactly what `readContract({ functionName: "bets" })` hands back. Derived from the ABI
+ * rather than hand-written, so a reorder retypes this instead of leaving a stale tuple
+ * that still accepts the new shape.
+ */
+export type RawBet = ReadContractReturnType<typeof GAME_ABI, "bets">;
+
+export function toBetView(raw: RawBet): BetView {
+  return Object.fromEntries(
+    BETS_FIELDS.map((field, index) => [field, raw[index]]),
+  ) as unknown as BetView;
+}
