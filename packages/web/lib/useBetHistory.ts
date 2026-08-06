@@ -282,12 +282,22 @@ export function useBetHistory(address: Address | undefined) {
     [address, hydrate],
   );
 
+  // Held stable across renders, because wagmi lists `onLogs` in the effect's
+  // dependencies: a fresh closure tears the subscription down and starts a new one,
+  // and any log emitted in that gap is simply never delivered. `watch(place)` builds
+  // a new function on every render, so subscribing to it directly meant re-subscribing
+  // on every render - harmless while this screen was static, and a dropped BetPlaced
+  // once it re-renders on every block.
+  const onPlaced = useMemo(() => watch(place), [watch]);
+  const onSettled = useMemo(() => watch(settle), [watch]);
+  const onRefunded = useMemo(() => watch(refundEntry), [watch]);
+
   useWatchContractEvent({
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetPlaced",
     enabled: Boolean(address),
-    onLogs: watch(place),
+    onLogs: onPlaced,
   });
 
   useWatchContractEvent({
@@ -295,7 +305,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetSettled",
     enabled: Boolean(address),
-    onLogs: watch(settle),
+    onLogs: onSettled,
   });
 
   useWatchContractEvent({
@@ -303,7 +313,7 @@ export function useBetHistory(address: Address | undefined) {
     abi: GAME_ABI,
     eventName: "BetRefunded",
     enabled: Boolean(address),
-    onLogs: watch(refundEntry),
+    onLogs: onRefunded,
   });
 
   const history = useMemo(
