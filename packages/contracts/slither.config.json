@@ -1,0 +1,12 @@
+{
+  "filter_paths": "lib/|node_modules/|test/|script/|examples/",
+  "fail_on": "medium",
+  "exclude_informational": false,
+  "exclude_low": false,
+  "exclude_medium": false,
+  "exclude_high": false,
+  "detectors_to_exclude": "naming-convention,solc-version",
+  "exclude_dependencies": true,
+  "legacy_ast": false,
+  "disable_color": false
+}

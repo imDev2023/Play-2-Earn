@@ -1,0 +1,54 @@
+# Echidna configuration for a project consuming evm-security-standards.
+#
+#   echidna . --contract <YourInvariantTest> --config tooling/echidna.yaml
+#
+# Echidna complements Foundry rather than replacing it. Foundry invariants run on every
+# commit and must stay fast. Echidna runs longer, keeps a corpus between runs, and finds
+# the sequences a short campaign does not reach.
+
+# Assertion mode reads Foundry-style `assert`/revert failures, which is what the property
+# mixins in templates/properties/ produce. Use "property" instead if you write
+# echidna_-prefixed boolean functions.
+testMode: assertion
+
+# Calls per campaign. 50,000 is a CI-scale run of a few minutes. Raise to 1,000,000+ for
+# an overnight or pre-audit campaign and record the depth you reached: a fuzzing campaign
+# has a documented depth, not an unlimited one.
+testLimit: 50000
+
+# Transactions per sequence. The interesting bugs are multi-step, and the default of 100
+# is often too short to reach a state worth breaking.
+seqLen: 100
+
+# Keep the corpus. This is the setting that makes repeated runs compound instead of
+# starting cold, and it is the most commonly omitted one.
+corpusDir: echidna-corpus
+
+# Coverage-guided input generation. Without this the campaign is blind.
+coverage: true
+
+# Shrinking effort on a failure. A counterexample you cannot read is a counterexample you
+# will not act on.
+shrinkLimit: 5000
+
+format: text
+
+# Parallel workers. Match to available cores in CI.
+workers: 4
+
+# Senders. Include at least one address with no privileges, so access-control properties
+# are actually probed rather than always being exercised by the deployer.
+sender: ["0x10000", "0x20000", "0x30000"]
+deployer: "0x30000"
+
+# Starting balances, high enough that value-dependent paths are reachable and the
+# campaign is not accidentally testing "what happens when everyone is broke".
+balanceAddr: 0xffffffff
+balanceContract: 0
+
+# Do not let the fuzzer call the property functions themselves as if they were user
+# actions. Add your own view-only helpers here as you add them.
+filterFunctions: []
+filterBlacklist: true
+
+cryticArgs: ["--foundry-compile-all"]

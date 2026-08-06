@@ -1,0 +1,181 @@
+name: EVM security (Hardhat)
+
+# The Hardhat variant. Same intent as evm-security.yml: it FAILS rather than reports.
+#
+# The one structural difference is property testing. Hardhat has no native invariant
+# runner, so the properties run under Medusa instead of `forge test --invariant`. That is
+# a slower loop, which is why the Medusa job here is scheduled rather than per-commit, and
+# why the per-commit signal leans harder on Slither and Solhint.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: packages/contracts
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+      - name: Solhint
+        run: npx solhint --config .solhint.json --max-warnings 0 'contracts/**/*.sol'
+
+  build-test:
+    name: Compile and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+      - run: npx hardhat compile
+      - run: npx hardhat test
+
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          slither-config: packages/contracts/slither.config.json
+          fail-on: medium
+          target: "packages/contracts"
+
+      - name: Record evidence
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path(".evm-standards.json")
+          cfg = json.loads(p.read_text()) if p.exists() else {}
+          cfg.setdefault("evidence", {})["slither"] = {
+              "clean": True, "summary": "no findings at medium or above"}
+          p.write_text(json.dumps(cfg, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-slither
+          path: packages/contracts/.evm-standards.json
+
+  medusa:
+    name: Medusa property campaign
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+
+      # Restore the corpus so campaigns compound instead of starting cold.
+      - uses: actions/cache@v4
+        with:
+          path: packages/contracts/medusa-corpus
+          key: medusa-corpus-${{ github.sha }}
+          restore-keys: medusa-corpus-
+
+      - name: Install Medusa
+        run: |
+          curl -sSL -o medusa.tar.gz \
+            https://github.com/crytic/medusa/releases/latest/download/medusa-linux-x64.tar.gz
+          tar -xzf medusa.tar.gz && sudo mv medusa /usr/local/bin/
+
+      # Shorter on a pull request so the loop stays usable; full depth on schedule.
+      - name: Run Medusa
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            medusa fuzz --config medusa.json
+          else
+            medusa fuzz --config medusa.json --test-limit 20000
+          fi
+
+      - name: Record evidence
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path(".evm-standards.json")
+          cfg = json.loads(p.read_text()) if p.exists() else {}
+          cfg.setdefault("evidence", {})["medusa"] = {
+              "clean": True, "summary": "medusa property campaign passed"}
+          p.write_text(json.dumps(cfg, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-medusa
+          path: packages/contracts/.evm-standards.json
+
+  gate:
+    name: Pre-deployment gate
+    runs-on: ubuntu-latest
+    needs: [slither, medusa]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: evidence-*
+          path: evidence
+
+      - name: Merge evidence
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          base = pathlib.Path(".evm-standards.json")
+          cfg = json.loads(base.read_text()) if base.exists() else {}
+          cfg.setdefault("evidence", {})
+          for f in pathlib.Path("evidence").rglob(".evm-standards.json"):
+              cfg["evidence"].update(json.loads(f.read_text()).get("evidence", {}))
+          base.write_text(json.dumps(cfg, indent=2) + "\n")
+          PY
+
+      - name: Run gate
+        run: python3 lib/evm-security-standards/gate/check.py --project .
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-report
+          path: packages/contracts/gate-report.json
