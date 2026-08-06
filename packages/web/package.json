@@ -11,6 +11,7 @@
     "lint": "next lint",
     "test": "npm run test:unit && playwright test",
     "test:unit": "node --import tsx --test test/*.test.ts",
+    "test:connected": "playwright test -c playwright.connected.config.ts",
     "test:install": "playwright install chromium"
   },
   "dependencies": {
