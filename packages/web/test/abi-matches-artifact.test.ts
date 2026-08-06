@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { GAME_ABI, RUSH_ABI } from "../lib/contracts";
@@ -20,14 +20,27 @@ import { GAME_ABI, RUSH_ABI } from "../lib/contracts";
  * The relayer already had the right idea: `packages/contracts/test/RelayerService.ts`
  * checks its hand-written fragments against the compiled contract. This is that check,
  * for the frontend, and it is deliberately not limited to `bets()` - a reorder is simply
- * the sharpest way this fails, not the only one. A renamed argument, a widened uint, a
- * function that quietly became `payable`: all of it decodes or encodes wrongly, and all
- * of it is caught here.
+ * the sharpest way this fails, not the only one. A reordered or widened field, a renamed
+ * event argument or struct-getter output, a flipped `indexed`, a function that quietly
+ * became `payable`, one that no longer exists: each decodes or encodes wrongly, and each
+ * is caught here.
  *
  * The ABI is allowed to be a *subset* of the contract. The frontend does not need every
  * function, and requiring it to declare them all would make this test a chore that
  * punishes anyone adding an unrelated method. What is not allowed is declaring something
  * the contract does not have, or declaring it differently.
+ *
+ * What this does NOT cover, stated so nobody reads more assurance into it than it gives:
+ *
+ * - **Function input names.** Compared by type only, deliberately. See `sameParams`.
+ * - **The `parseAbiItem` event fragments** in `lib/useBetHistory.ts` and
+ *   `lib/admin/useRelayerHealth.ts`. They are the live history decode path and they are
+ *   just as hand-written as these, but they are module-private and `useBetHistory.ts` is
+ *   being rewritten by #51, so exporting them for this belongs in a follow-up rather
+ *   than in a collision.
+ * - **Artifact freshness.** This reads whatever `hardhat compile` last produced. A tree
+ *   built from different source passes wrongly. CI compiles in its `build` step before
+ *   reaching this test, so the case is a stale local checkout, not a stale CI run.
  */
 
 /** Where `hardhat compile` leaves its output. Gitignored, so it may be absent locally. */
@@ -36,6 +49,7 @@ const ARTIFACTS = join(__dirname, "..", "..", "contracts", "artifacts", "contrac
 type AbiParam = {
   readonly name?: string;
   readonly type: string;
+  readonly indexed?: boolean;
   readonly components?: readonly AbiParam[];
 };
 
@@ -45,32 +59,68 @@ type AbiEntry = {
   readonly stateMutability?: string;
   readonly inputs?: readonly AbiParam[];
   readonly outputs?: readonly AbiParam[];
-  readonly anonymous?: boolean;
 };
 
+/**
+ * Locate `<contract>.json` under the artifacts tree.
+ *
+ * Hardhat mirrors the source layout, and `contracts/` already has `governance/`,
+ * `interfaces/`, `mocks/` and `testnet/` subdirectories, so the path is searched rather
+ * than assumed. Guessing one would report "run the build" at a tree that had been built,
+ * which is the least useful thing a failing guard can say.
+ */
+function findArtifact(contract: string, dir = ARTIFACTS): string | undefined {
+  if (!existsSync(dir)) return undefined;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const found = findArtifact(contract, path);
+      if (found) return found;
+    } else if (entry.name === `${contract}.json`) {
+      return path;
+    }
+  }
+  return undefined;
+}
+
 function artifactAbi(contract: string): readonly AbiEntry[] {
-  const path = join(ARTIFACTS, `${contract}.sol`, `${contract}.json`);
+  const path = findArtifact(contract);
   // A silent skip would make this guard worthless exactly when it is load bearing, so an
   // uncompiled tree is a failure with instructions rather than a green run.
   assert.ok(
-    existsSync(path),
-    `No compiled artifact at ${path}. Run \`npm run build --workspace @rushood/contracts\` ` +
-      `first; CI compiles before it reaches this test.`,
+    path,
+    `No compiled artifact for ${contract} under ${ARTIFACTS}. Run ` +
+      `\`npm run build --workspace @rushood/contracts\` first; CI compiles before it ` +
+      `reaches this test.`,
   );
-  return JSON.parse(readFileSync(path, "utf8")).abi;
+  const abi = JSON.parse(readFileSync(path, "utf8")).abi;
+  // Without this, a malformed artifact fails as `onChain.filter is not a function` rather
+  // than as the instructive message the check above exists to give.
+  assert.ok(Array.isArray(abi), `${path} has no abi array; the artifact is malformed.`);
+  return abi;
 }
 
 /**
- * Params compared by position and type, and by name only where a name is load bearing.
+ * Params compared by position and type, plus `indexed`, plus names where a name is load
+ * bearing at decode time.
  *
- * Which is outputs, not inputs. Calldata is encoded positionally from the types, so an
- * *input* name is documentation: `RUSH_ABI` calls ERC20's second `approve` argument
- * `amount` where OpenZeppelin calls it `value`, and every call either one produces is
- * byte-identical. Failing on that would make this guard cry wolf about a synonym.
+ * **Function inputs: types only.** Calldata is encoded positionally, so an input name is
+ * documentation. `RUSH_ABI` calls ERC20's second `approve` argument `amount` where
+ * OpenZeppelin calls it `value`, and every call either one produces is byte-identical.
+ * Failing on that would make this guard cry wolf about a synonym.
  *
- * Output names are the opposite. `toBetView` reads the `bets()` field names straight out
+ * **Function outputs: names too.** `toBetView` reads the `bets()` field names straight out
  * of this ABI to build a named bet, so a name that disagrees with the contract silently
  * relabels a field - the same failure as a reorder, reached by a different route.
+ *
+ * **Event inputs: names too.** viem hands back `log.args` as an *object*, and
+ * `useBetHistory` reads `args.stake`, `args.win`, `args.payout` and the rest by name. An
+ * event argument is not documentation; it is the key the app reads.
+ *
+ * `indexed` is compared everywhere it appears, because it decides whether a value arrives
+ * in a topic or in the data blob. Flip it on one side and every argument of that event
+ * decodes out of the wrong place, without throwing. That is this bug class exactly, and an
+ * earlier revision of this file missed it.
  */
 function sameParams(
   a: readonly AbiParam[] = [],
@@ -82,6 +132,10 @@ function sameParams(
     a.every((param, index) => {
       const other = b[index];
       if (param.type !== other.type) return false;
+      // Undeclared on one side is a "do not care"; a disagreement is not.
+      if (param.indexed !== undefined && other.indexed !== undefined) {
+        if (param.indexed !== other.indexed) return false;
+      }
       // An unnamed param in the hand-written copy is a deliberate "do not care" - several
       // single-output getters are written that way. A *differing* name is not.
       if (compareNames && param.name && other.name && param.name !== other.name) return false;
@@ -90,9 +144,14 @@ function sameParams(
   );
 }
 
+function describeParam(param: AbiParam): string {
+  const indexed = param.indexed ? "indexed " : "";
+  return `${param.type} ${indexed}${param.name ?? ""}`.trim();
+}
+
 function describeEntry(entry: AbiEntry): string {
-  const params = (entry.inputs ?? []).map((i) => `${i.type} ${i.name ?? ""}`.trim()).join(", ");
-  const returns = (entry.outputs ?? []).map((o) => `${o.type} ${o.name ?? ""}`.trim()).join(", ");
+  const params = (entry.inputs ?? []).map(describeParam).join(", ");
+  const returns = (entry.outputs ?? []).map(describeParam).join(", ");
   return `${entry.type} ${entry.name ?? ""}(${params})${returns ? ` returns (${returns})` : ""}`;
 }
 
@@ -107,8 +166,6 @@ function assertMatchesContract(label: string, hand: readonly AbiEntry[], contrac
   const onChain = artifactAbi(contract);
 
   for (const declared of hand) {
-    if (declared.type === "constructor" || declared.type === "fallback") continue;
-
     const candidates = onChain.filter(
       (entry) => entry.type === declared.type && entry.name === declared.name,
     );
@@ -120,9 +177,13 @@ function assertMatchesContract(label: string, hand: readonly AbiEntry[], contrac
         `viem will encode a call no deployment can answer.`,
     );
 
+    // Event arguments arrive as a named object, so their names are read; function
+    // arguments are encoded positionally, so theirs are not. See `sameParams`.
+    const namedInputs = declared.type === "event";
+
     const matched = candidates.find(
       (entry) =>
-        sameParams(entry.inputs, declared.inputs, { compareNames: false }) &&
+        sameParams(entry.inputs, declared.inputs, { compareNames: namedInputs }) &&
         sameParams(entry.outputs, declared.outputs, { compareNames: true }),
     );
 
