@@ -59,7 +59,10 @@ export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): 
             args: [last.args.betId],
           }),
         ]);
-        const placedAt = bet[4];
+        // Index 3, not 4. The bets() tuple is packed for gas (#47) and `placedAt` sits
+        // between `settled` and `stake`; reading index 4 yields the stake, a wei-scale
+        // number that floors every lag at zero and pins this indicator to healthy.
+        const placedAt = bet[3];
         if (cancelled) return;
         setLastSettleLag(settledIn.timestamp > placedAt ? settledIn.timestamp - placedAt : 0n);
       } catch {
@@ -72,7 +75,7 @@ export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): 
   }, [activeBetId]);
 
   const now = block?.timestamp;
-  const placedAt = activeBetId && activeBet ? activeBet[4] : undefined;
+  const placedAt = activeBetId && activeBet ? activeBet[3] : undefined;
 
   return relayerHealth({
     activeBetId: activeBetId ?? 0n,
