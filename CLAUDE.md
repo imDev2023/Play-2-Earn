@@ -10,13 +10,13 @@ It deliberately does not restate what the linked files already say.
 
 | Path | Why |
 |---|---|
-| `AGENTS.md` | Repo conventions, the prettier trap, and the **review cadence**. Short on `main`; the prettier and advisories sections are on PR #46 and the review cadence on PR #52. |
+| `AGENTS.md` | Repo conventions, the prettier trap, and the **review cadence**. All of it is on `main` now (#46 and #52 landed). |
 | `docs/spec/RUSHOOD-game-spec.md` | The product spec, and the authority for the Spec axis of `/code-review`. |
 | `docs/agents/issue-tracker.md` | Issues live as GitHub issues, driven by `gh`. |
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `packages/contracts/lib/evm-security-standards/` | Submodule, installed 2026-08-06 at profile `robinhood-4663`. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06. Committed on branch `chore/evm-security-gate`, not yet on `main`. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
 | `web3-security.md` | Untracked at the repo root, four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
 
 ## Deployment reality
@@ -28,21 +28,34 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
+**That debt is now owed.** #48 repacked `RushoodGame`'s storage, so the deployed 46630 bytecode no longer matches the tree and the redeploy is outstanding.
+Do it once, and pay the manual Blockscout verify once, rather than per `.sol` change.
+
 ## Traps that cost time
 
+**Never hand a wagmi watcher a function built during render.**
+`useWatchContractEvent` lists `onLogs` in its effect dependencies (read it in `node_modules/wagmi/dist/esm/hooks/useWatchContractEvent.js`), so a new identity tears the subscription down and opens another - and every log emitted in that gap is lost, silently.
+An inline arrow, or anything built by calling a factory during render, is a new identity every render.
+This sat latent for months because the play screen was static between bets; #51 made it re-render on every block while one is pending (`useBlock({watch})` plus a 5s `activeBetId` poll) and it started dropping `BetPlaced`.
+The row was then built by `BetSettled` alone - stake `0`, no `clientSeed`, no `commit` - so `verifyInputsFor` returned null and the fairness verdict *vanished after having rendered*.
+`lib/useStableCallback.ts` is the fix, used at all five call sites. Memoising is not enough: these handlers close over things that legitimately churn.
+
+**A chain read taken to back up an event can be older than the event.**
+`hydrate` reads `bets()` after `BetPlaced`, and that reply is a pre-settlement snapshot; writing it straight over the row erased the reveal `BetSettled` had already delivered - the same vanished verdict, reached from the other side, and the ordinary case rather than a corner.
+`hydrateEntry` merges instead: the chain is authoritative about what it knows, not about what it has not caught up to.
+
+**Both bugs above were invisible to every unit test and caught by `e2e-connected/bet.spec.ts`.**
+That suite now runs in CI as the `connected-e2e` job (#49 landed). It is the only tier that has ever caught a bug in this area, so a change to the bet or refund path is not verified until it is green.
+
 **The `bets()` tuple decodes positionally, so a reorder puts every field in its neighbour without throwing.**
-An address is still an address.
-Contract tests cannot catch it: Typechain returns structs as named tuples, so they pass whatever the order is.
-That is why every guard lives in the web package or in an explicitly hand-written-ABI test.
+An address is still an address, and Typechain returns named tuples so contract tests pass whatever the order is.
+Any consumer derives its field order from the ABI and never hard-codes one; the guards are `packages/web/test/abi-matches-artifact.test.ts` (#53) and `toBetView` / `BetViewNamesMatchAbi` / `RawBet` in `lib/contracts.ts` (#51). Read those, not this paragraph.
+Three positional sites remain - `VerifyTool.tsx` and `useRelayerHealth.ts` twice. Migrate them onto `toBetView`.
 
-**The rule: any `bets()` consumer derives its field order from the ABI and never hard-codes one.**
-Enforced by `packages/web/test/abi-matches-artifact.test.ts` (#53), which compares `GAME_ABI` and `RUSH_ABI` against the compiled artifacts, and by `toBetView` / `BetViewNamesMatchAbi` / `RawBet` in `lib/contracts.ts` (#51). Read those files rather than this paragraph.
-Four positional call sites remain by choice - `VerifyTool.tsx`, `useBetHistory.ts`, `useRelayerHealth.ts` twice - because #48 is repacking the struct. Migrate them once it lands.
-
-**This trap bit twice inside the helpers written to prevent it, and that is the durable lesson.**
-`toBetView`'s first revision destructured by position; its second fixed the order and still shipped an unchecked cast so nothing checked *names*.
-Then #53, the guard for exactly this, shipped ignoring `indexed` and treating event argument names as documentation - and viem returns `log.args` as an object, so `useBetHistory` reads them by name.
-No test caught any of the three. Review caught all three, which is the whole argument for the cadence below.
+**The durable lesson: this trap bit three times *inside the code written to prevent it*, and a fourth time during the merge that was supposed to end it.**
+`toBetView` shipped positional, then fixed the order but cast away the names; #53, the guard for exactly this, shipped ignoring `indexed` and treating event argument names as documentation.
+Then #48's repack collided with #51's `hydrate` and the two hard-coded orders disagreed about every field after `tier` - a conflict git could show, but only because both sides happened to touch the same lines. Had they not, it would have merged clean and silently wrong. `hydrate` now decodes through `toBetView`.
+No test caught any of them. Review and the merge caught them. That is the entire argument for the cadence.
 
 **The two e2e suites want opposite worlds.**
 `playwright.config.ts` asserts the disconnected UI and its admin specs assert the chain is *unreachable*, so it needs the Hardhat node stopped.
@@ -65,7 +78,7 @@ Reserve a real extension for verifying extension-specific behaviour only; see `d
 If `agent-browser eval` starts returning `""`, check `get url` - the tab has gone to `about:blank` and every result since is meaningless.
 
 **A commit that answers a review finding needs its own review.**
-The cadence is in `AGENTS.md` (PR #52) and is not restated here; what belongs here is why it keeps being skipped.
+The cadence is in `AGENTS.md` (on `main` since #52) and is not restated here; what belongs here is why it keeps being skipped.
 A fix closing a finding feels like the end of a review rather than the start of one, and it is written under the impression that the problem is already understood - the exact state in which a fix reproduces the bug it was meant to remove.
 Both `toBetView` revisions above were written that way.
 Size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
@@ -104,4 +117,4 @@ Anything that displays its deadline must read **chain** time, never the browser 
 
 The independent security audit, gambling/legal compliance, trademark review of "RUSHOOD", 25 ETH for the mainnet LP seed at the locked 1e-7 price, and the systemd install drill.
 The shipped fairness disclosure says the contracts are unaudited; keep it that way.
-`docs/ops/web3-security-review.md` (on `chore/security-headers`) is an engineering pass against published checklists, explicitly not the audit.
+`docs/ops/web3-security-review.md` is an engineering pass against published checklists, explicitly not the audit.
