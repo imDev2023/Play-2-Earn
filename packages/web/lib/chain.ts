@@ -73,6 +73,17 @@ export const ACTIVE_CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? hardha
 /** The active chain's full definition (falls back to Hardhat if the id is unknown). */
 export const activeChain = CHAINS.find((c) => c.id === ACTIVE_CHAIN_ID) ?? hardhat;
 
+/**
+ * The same id, typed as one of the chains wagmi is actually configured with.
+ *
+ * `ACTIVE_CHAIN_ID` comes from the environment and so is only a `number`, which wagmi's
+ * typed config will not accept. Every call that has to name a chain - a read that must
+ * not follow the wallet elsewhere, a write that must not land on the wrong chain - uses
+ * this, so none of them needs a cast, and an id the app was never configured with is
+ * resolved once here rather than at each call site.
+ */
+export const activeChainId = activeChain.id;
+
 /** True when the app is targeting a local dev node rather than a public chain. */
 export const isLocalChain = activeChain.id === hardhat.id;
 
@@ -126,7 +137,52 @@ export function uniswapSwapUrl(rush: Address, chainId: number = ACTIVE_CHAIN_ID)
   return `${base}?${params.toString()}`;
 }
 
+/**
+ * Every chain id this app can put a name to.
+ *
+ * Two kinds of entry, one table. `CHAINS` are the chains RUSHOOD runs on, and their
+ * names come from the definitions above so the two can never disagree. The literals
+ * after them are chains RUSHOOD does not run on but that players arrive from: the
+ * wrong-network banner reads "You're on {label}", and the label has one job, which is
+ * to match what the player can see in their own wallet. "Chain 1" fails that against a
+ * MetaMask reading "Ethereum".
+ *
+ * The visiting entries are deliberately few. This is not a chain registry - it covers
+ * the networks a wallet is plausibly sitting on when it lands here, and anything else
+ * still degrades to the id, which is at least unambiguous.
+ */
+const CHAIN_NAMES: Record<number, string> = {
+  ...Object.fromEntries(CHAINS.map((c) => [c.id, c.name])),
+  1: "Ethereum",
+  10: "OP Mainnet",
+  56: "BNB Smart Chain",
+  137: "Polygon",
+  8453: "Base",
+  42161: "Arbitrum One",
+  11155111: "Sepolia",
+};
+
+/**
+ * Is a connected wallet somewhere it cannot play?
+ *
+ * Shared rather than written out at each call site because two places depend on it -
+ * the banner that offers the switch, and the bet button that has to be disabled while
+ * it is showing. If those two ever disagreed the result is the failure this replaced:
+ * a live-looking bet button on the wrong chain.
+ *
+ * `undefined` is not a wrong network. It is the gap before the connection reports a
+ * chain, and treating it as wrong would flash "Switch network to play" at players who
+ * are on exactly the right one.
+ *
+ * Narrowing to `number` follows from that: a caller inside the wrong-network branch is
+ * holding a chain id the wallet has actually reported, and can name it without a
+ * fallback for a case this function has already excluded.
+ */
+export function isWrongNetwork(chainId: number | undefined): chainId is number {
+  return chainId !== undefined && chainId !== ACTIVE_CHAIN_ID;
+}
+
 /** Short, human label for a chain id (for status chips). */
 export function chainLabel(chainId: number): string {
-  return CHAINS.find((c) => c.id === chainId)?.name ?? `Chain ${chainId}`;
+  return CHAIN_NAMES[chainId] ?? `Chain ${chainId}`;
 }

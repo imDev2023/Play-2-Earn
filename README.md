@@ -45,9 +45,11 @@ npm run relayer --workspace @rushood/contracts
 npm run dev --workspace @rushood/web                    # http://localhost:3000
 ```
 
-Open the app, click **Connect Mock Connector** (Hardhat account #1, unlocked on the local
-node), and **Place bet (100 RUSH)**. The relayer settles it (sponsoring gas) and the panel
-shows the result. Contract addresses default to the deterministic local-deploy addresses;
+Open the app, click **Connect test wallet** (Hardhat account #1, unlocked on the local
+node), and **Place bet**. The relayer settles it (sponsoring gas) and the panel shows the
+result. The button names whichever wallet it will open, so in a browser with a real wallet
+installed it reads **Connect MetaMask** instead - the test wallet is a last resort, offered
+only when there is no real one, and only when the app targets a local node at all. Contract addresses default to the deterministic local-deploy addresses;
 override with `NEXT_PUBLIC_GAME_ADDRESS` / `NEXT_PUBLIC_RUSH_ADDRESS` / `NEXT_PUBLIC_RPC_URL`.
 
 **Relayer + refund (#19).** The relayer manages the server hash chain and rotates to a fresh

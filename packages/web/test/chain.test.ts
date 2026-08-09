@@ -100,6 +100,46 @@ describe("chain metadata", () => {
     assert.equal(chain.chainLabel(999999), "Chain 999999");
   });
 
+  it("treats any chain that is not the active one as wrong", () => {
+    // Ethereum is the one that mattered: wallets sit there by default, and the guard
+    // used to read a wagmi hook that could never report it.
+    assert.equal(chain.isWrongNetwork(1), true);
+    assert.equal(chain.isWrongNetwork(4663), true);
+    assert.equal(chain.isWrongNetwork(chain.ACTIVE_CHAIN_ID), false);
+  });
+
+  it("does not call a wallet that has not reported a chain yet wrong", () => {
+    assert.equal(chain.isWrongNetwork(undefined), false);
+  });
+
+  it("names the chains players arrive on by mistake", () => {
+    // The wrong-network banner reads "You're on {label}". Ethereum is where a wallet
+    // sits by default, so it is the label most players will ever see, and "Chain 1"
+    // does not tell someone staring at a MetaMask that says "Ethereum" that the two
+    // are the same place.
+    assert.equal(chain.chainLabel(1), "Ethereum");
+    assert.equal(chain.chainLabel(8453), "Base");
+    assert.equal(chain.chainLabel(42161), "Arbitrum One");
+  });
+
+  it("takes the names of its own chains from their definitions", () => {
+    // One table covers both kinds of chain, and the entries for the chains RUSHOOD runs
+    // on are derived rather than retyped, so a renamed chain cannot end up with the
+    // banner and the rest of the app calling it two different things.
+    for (const c of chain.CHAINS) {
+      assert.equal(chain.chainLabel(c.id), c.name);
+    }
+  });
+
+  it("resolves the active chain id to one the app is configured for", () => {
+    // Writes name this id so a wallet cannot sign somewhere else. An id the app was
+    // never configured with has to be resolved here, not passed to wagmi.
+    assert.equal(
+      chain.CHAINS.some((c) => c.id === chain.activeChainId),
+      true,
+    );
+  });
+
   it("has nowhere to send a local player for gas", () => {
     assert.equal(chain.gasHelpUrl(31337), null);
   });

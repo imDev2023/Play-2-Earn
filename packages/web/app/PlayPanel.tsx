@@ -5,8 +5,6 @@ import { decodeEventLog, formatUnits, parseUnits } from "viem";
 import {
   useAccount,
   useBlock,
-  useChainId,
-  useConnect,
   useDisconnect,
   useReadContract,
   useWatchContractEvent,
@@ -14,7 +12,7 @@ import {
 } from "wagmi";
 import { getBlock, readContract, waitForTransactionReceipt } from "wagmi/actions";
 import { wagmiConfig } from "../lib/wagmi";
-import { ACTIVE_CHAIN_ID } from "../lib/chain";
+import { activeChainId, isWrongNetwork } from "../lib/chain";
 import {
   EDGE_DEN,
   EDGE_NUM,
@@ -36,6 +34,7 @@ import { useStableCallback } from "../lib/useStableCallback";
 import { chip, label, panel, primaryButton, ghostButton } from "../lib/ui";
 import { OddsLadder } from "../components/OddsLadder";
 import { NetworkOnboarding } from "../components/NetworkOnboarding";
+import { ConnectWallet } from "../components/ConnectWallet";
 import { BuyRush } from "../components/BuyRush";
 import { Reveal, type RevealPhase } from "../components/Reveal";
 import { SettlementHelp } from "../components/SettlementHelp";
@@ -57,9 +56,11 @@ function randomSeed(): bigint {
 }
 
 export function PlayPanel() {
-  const { address, isConnected } = useAccount();
-  const chainId = useChainId();
-  const { connect, connectors } = useConnect();
+  // `chainId` here is the connection's own chain. `useChainId` reports the config's
+  // selected chain instead, which wagmi refuses to move to a chain it was not
+  // configured with - so it answered ACTIVE_CHAIN_ID however far away the wallet
+  // really was, and `wrongNetwork` below was unreachable. See NetworkOnboarding.
+  const { address, isConnected, chainId } = useAccount();
   const { disconnect } = useDisconnect();
   const { writeContractAsync: writeAsync } = useWriteContract();
 
@@ -81,7 +82,7 @@ export function PlayPanel() {
   // the player is being asked to approve rather than leave them to read the hex.
   const [approvalBets, setApprovalBets] = useState(0);
 
-  const wrongNetwork = isConnected && chainId !== ACTIVE_CHAIN_ID;
+  const wrongNetwork = isConnected && isWrongNetwork(chainId);
 
   // Every event this panel watches is chain-wide, so each handler has to ask whether the
   // log is about the connected player. Asking it the same way in one place keeps the
@@ -98,7 +99,15 @@ export function PlayPanel() {
 
   const { history } = useBetHistory(address);
 
+  // Every read below names the active chain rather than inheriting whatever chain wagmi
+  // has selected. These addresses only mean anything where RUSHOOD is deployed, so a
+  // read that followed the wallet elsewhere would not fail - it would answer about a
+  // different contract, or an empty address, and show that as a balance. Being explicit
+  // also keeps the split honest: reads go over the app's own transport and stay correct
+  // while the wallet is away, which is why the banner has to be the thing that tells a
+  // player they cannot bet.
   const { data: balance, refetch: refetchBalance } = useReadContract({
+    chainId: activeChainId,
     address: RUSH_ADDRESS,
     abi: RUSH_ABI,
     functionName: "balanceOf",
@@ -107,12 +116,14 @@ export function PlayPanel() {
   });
 
   const { data: minBet } = useReadContract({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     functionName: "minBet",
   });
 
   const { data: maxBet } = useReadContract({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     functionName: "maxBet",
@@ -124,6 +135,7 @@ export function PlayPanel() {
   // survive a reload, so the pending bet is recovered from the chain: `activeBetId` is
   // the single unsettled bet, by the contract's own invariant.
   const { data: activeBetId } = useReadContract({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     functionName: "activeBetId",
@@ -135,6 +147,7 @@ export function PlayPanel() {
     let cancelled = false;
     (async () => {
       const raw = await readContract(wagmiConfig, {
+        chainId: activeChainId,
         address: GAME_ADDRESS,
         abi: GAME_ABI,
         functionName: "bets",
@@ -175,6 +188,7 @@ export function PlayPanel() {
   // The commitment the *next* bet locks against, so a player can record it before
   // betting rather than take our word for it afterwards (#24).
   const { data: standingCommit, refetch: refetchCommit } = useReadContract({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     functionName: "currentCommit",
@@ -221,6 +235,7 @@ export function PlayPanel() {
   );
 
   useWatchContractEvent({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetSettled",
@@ -254,6 +269,7 @@ export function PlayPanel() {
   );
 
   useWatchContractEvent({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetRefunded",
@@ -271,6 +287,7 @@ export function PlayPanel() {
     try {
       const allowance = address
         ? await readContract(wagmiConfig, {
+            chainId: activeChainId,
             address: RUSH_ADDRESS,
             abi: RUSH_ABI,
             functionName: "allowance",
@@ -283,23 +300,37 @@ export function PlayPanel() {
         const amount = approvalAmount({ stake, balance });
         setApprovalBets(betsCovered(amount, stake));
         setStatus("approving");
+        // Naming the chain on a write is what makes the guard binding rather than
+        // cosmetic. `wrongNetwork` is checked once, on the click; a wallet moved to
+        // another network between the approval and the bet would otherwise land
+        // placeBet there against GAME_ADDRESS, and the receipt wait would then poll a
+        // chain the transaction was never on. With `chainId` set, wagmi asks the wallet
+        // to move back and refuses if it will not.
         const approveHash = await writeAsync({
+          chainId: activeChainId,
           address: RUSH_ADDRESS,
           abi: RUSH_ABI,
           functionName: "approve",
           args: [GAME_ADDRESS, amount],
         });
-        await waitForTransactionReceipt(wagmiConfig, { hash: approveHash });
+        await waitForTransactionReceipt(wagmiConfig, {
+          chainId: activeChainId,
+          hash: approveHash,
+        });
       }
 
       setStatus("placing");
       const betHash = await writeAsync({
+        chainId: activeChainId,
         address: GAME_ADDRESS,
         abi: GAME_ABI,
         functionName: "placeBet",
         args: [tier, stake, randomSeed()],
       });
-      const receipt = await waitForTransactionReceipt(wagmiConfig, { hash: betHash });
+      const receipt = await waitForTransactionReceipt(wagmiConfig, {
+        chainId: activeChainId,
+        hash: betHash,
+      });
 
       // Identify the bet from its own BetPlaced log rather than by reading
       // `activeBetId` afterwards: by the time a read lands the relayer may already have
@@ -320,12 +351,13 @@ export function PlayPanel() {
     setRefunding(true);
     try {
       const hash = await writeAsync({
+        chainId: activeChainId,
         address: GAME_ADDRESS,
         abi: GAME_ABI,
         functionName: "refund",
         args: [pending.betId],
       });
-      await waitForTransactionReceipt(wagmiConfig, { hash });
+      await waitForTransactionReceipt(wagmiConfig, { chainId: activeChainId, hash });
       // BetRefunded clears the pending state, the same way BetSettled does for a win.
     } catch (err) {
       const { message } = betFailure(err);
@@ -365,18 +397,7 @@ export function PlayPanel() {
           <p style={{ margin: 0, color: "var(--muted)" }}>
             Connect a wallet to pick your odds and take a shot at the moonshot.
           </p>
-          <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            {connectors.map((connector) => (
-              <button
-                key={connector.uid}
-                data-testid={`connect-${connector.type}`}
-                style={ghostButton}
-                onClick={() => connect({ connector })}
-              >
-                Connect {connector.name}
-              </button>
-            ))}
-          </div>
+          <ConnectWallet />
         </section>
         <section style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
           <span style={label}>The ladder</span>
@@ -539,7 +560,7 @@ function betPlacedFrom(
 
 /** The chain's own clock at the block a bet landed in. */
 async function blockTimestamp(blockNumber: bigint): Promise<number> {
-  const block = await getBlock(wagmiConfig, { blockNumber });
+  const block = await getBlock(wagmiConfig, { chainId: activeChainId, blockNumber });
   return Number(block.timestamp);
 }
 
