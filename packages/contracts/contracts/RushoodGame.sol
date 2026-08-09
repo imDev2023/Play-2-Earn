@@ -56,13 +56,21 @@ import {Treasury} from "./Treasury.sol";
 contract RushoodGame is Pausable {
     using SafeERC20 for IERC20;
 
+    /// @dev Field order is a storage layout, not a reading order. `player`, `tier`,
+    ///      `settled` and `placedAt` are 30 bytes together and share one slot; written
+    ///      in declaration order the way this struct used to be, `settled` landed in a
+    ///      slot of its own and `placedAt` in another, so every bet paid for two extra
+    ///      slots - one on `placeBet` and one on `settleBet`, which is where the 20k
+    ///      and 15k in issue #47 came from. `placedAt` is a `uint64` because it is read
+    ///      in exactly one place, `placedAt + SETTLE_TIMEOUT`, and 64 bits of seconds
+    ///      outlasts anything this contract needs to survive.
     struct Bet {
         address player;
         uint8 tier;
+        bool settled;
+        uint64 placedAt;
         uint256 stake;
         uint256 clientSeed;
-        uint256 placedAt;
-        bool settled;
         /// @dev Chain head this bet is locked against — the server's commitment,
         ///      published before the bet existed. Stored (not just emitted) so the
         ///      whole verification input set is readable from `bets(betId)` forever,
@@ -151,10 +159,18 @@ contract RushoodGame is Pausable {
     bytes32 public currentCommit;
 
     /// @notice Monotonic bet id counter (also the id of the most recent bet).
-    uint256 public betCounter;
+    /// @dev Sized to share a slot with `activeBetId`. Both are written by every
+    ///      `placeBet`, and `activeBetId` goes zero to non-zero each time, which is
+    ///      charged as a fresh slot rather than a modify. Sharing with a counter that
+    ///      is already non-zero avoids that, at the cost of the clearing refund the
+    ///      settle path used to earn when the slot went back to zero - so the net is
+    ///      smaller than the headline `SSTORE` difference suggests. Measured rather
+    ///      than argued: `placeBet` 202,842 -> 157,121 for both packings together
+    ///      (#47). 2^128 bets is not a constraint.
+    uint128 public betCounter;
 
     /// @notice Id of the currently unsettled bet, or 0 when none is active.
-    uint256 public activeBetId;
+    uint128 public activeBetId;
 
     /// @notice All bets by id.
     mapping(uint256 => Bet) public bets;
@@ -384,7 +400,7 @@ contract RushoodGame is Pausable {
         if (stake > maxBet(tier)) revert ExceedsMaxBet();
 
         betId = ++betCounter;
-        activeBetId = betId;
+        activeBetId = uint128(betId);
         // Pin the commitment the bet is locked against at placement time, so the
         // player's proof that the server committed *before* the draw survives the
         // head advancing on every later settlement.
@@ -394,8 +410,8 @@ contract RushoodGame is Pausable {
             tier: tier,
             stake: stake,
             clientSeed: clientSeed,
-            placedAt: block.timestamp,
             settled: false,
+            placedAt: uint64(block.timestamp),
             commit: commit,
             reveal: bytes32(0)
         });
@@ -460,7 +476,7 @@ contract RushoodGame is Pausable {
         if (betId == 0 || betId != activeBetId) revert NotRefundable();
 
         Bet storage bet = bets[betId];
-        if (block.timestamp < bet.placedAt + SETTLE_TIMEOUT) revert RefundNotReady();
+        if (block.timestamp < uint256(bet.placedAt) + SETTLE_TIMEOUT) revert RefundNotReady();
 
         bet.settled = true;
         activeBetId = 0;

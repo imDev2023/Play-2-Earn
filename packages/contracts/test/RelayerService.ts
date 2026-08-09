@@ -495,13 +495,30 @@ describe("relayer service against a live game (#39)", () => {
    * that copy honest: a signature change breaks this test rather than a deployment.
    */
   it("drives the real contract through the hand-written ABI", async () => {
-    const { address, relayer } = await deploy();
+    const { game: deployed, player, address, relayer } = await deploy();
     const game = connectGame(address, relayer);
 
     expect(await game.activeBetId()).to.equal(0n);
     expect(await game.SETTLE_TIMEOUT()).to.equal(3600n);
     expect(await game.currentCommit()).to.match(/^0x[0-9a-f]{64}$/i);
-    expect((await game.bets(0n)).settled).to.equal(false);
+
+    // Against a real bet, and reading fields that cannot be mistaken for each other.
+    // `bets(0)` was doing this job and could not: no bet zero exists, so every word
+    // comes back zero and the assertion holds for any field order the ABI declares.
+    // The layout is packed (#47) and the hand-written copy is the relayer's only view
+    // of it, so a reorder here has to fail loudly rather than decode `stake` into
+    // `placedAt` and floor every settlement-lag alert at zero.
+    await deployed.connect(player).placeBet(COINFLIP_TIER, BET_AMOUNT, 7n);
+    const bet = await game.bets(1n);
+    expect(bet.settled).to.equal(false);
+    expect(bet.stake).to.equal(BET_AMOUNT);
+    expect(bet.clientSeed).to.equal(7n);
+    expect(bet.player).to.equal(player.address);
+    expect(bet.tier).to.equal(BigInt(COINFLIP_TIER));
+    // A plausible unix timestamp, and nothing else in the tuple is one: the stake is
+    // 1e20, the seed is 7, and the two hashes are not numbers.
+    expect(bet.placedAt).to.be.greaterThan(1_600_000_000n);
+    expect(bet.placedAt).to.be.lessThan(4_000_000_000n);
   });
 
   /**
