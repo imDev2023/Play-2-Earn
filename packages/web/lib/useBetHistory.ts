@@ -5,7 +5,7 @@ import { parseAbiItem, type Address, type Hex } from "viem";
 import { getPublicClient, readContract } from "wagmi/actions";
 import { useWatchContractEvent } from "wagmi";
 import { wagmiConfig } from "./wagmi";
-import { GAME_ABI, GAME_ADDRESS } from "./contracts";
+import { GAME_ABI, GAME_ADDRESS, toBetView } from "./contracts";
 import { useStableCallback } from "./useStableCallback";
 
 /**
@@ -252,8 +252,10 @@ export function useBetHistory(address: Address | undefined) {
           functionName: "bets",
           args: [betId],
         });
-        const [, rawTier, stake, clientSeed, , , commit, reveal] = bet;
-        const chain = { tier: Number(rawTier), stake, clientSeed, commit, reveal };
+        // Named, not positional: #48 repacked this struct and the two hard-coded
+        // orders that met here disagreed about every field after `tier`.
+        const { tier, stake, clientSeed, commit, reveal } = toBetView(bet);
+        const chain = { tier: Number(tier), stake, clientSeed, commit, reveal };
         setDrafts((draft) => {
           const key = betId.toString();
           const existing = draft.get(key);

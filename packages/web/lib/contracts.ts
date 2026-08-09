@@ -58,13 +58,17 @@ export const GAME_ABI = [
     name: "bets",
     stateMutability: "view",
     inputs: [{ name: "betId", type: "uint256" }],
+    // Order and widths follow the struct's storage layout, which was packed for gas
+    // in #47 - `settled` and `placedAt` moved up to share a slot with `player` and
+    // `tier`. Callers destructure this tuple positionally, so the order here is load
+    // bearing: get it wrong and the fields decode into each other silently.
     outputs: [
       { name: "player", type: "address" },
       { name: "tier", type: "uint8" },
+      { name: "settled", type: "bool" },
+      { name: "placedAt", type: "uint64" },
       { name: "stake", type: "uint256" },
       { name: "clientSeed", type: "uint256" },
-      { name: "placedAt", type: "uint256" },
-      { name: "settled", type: "bool" },
       { name: "commit", type: "bytes32" },
       { name: "reveal", type: "bytes32" },
     ],
@@ -178,7 +182,7 @@ export const GAME_ABI = [
     name: "activeBetId",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ type: "uint256" }],
+    outputs: [{ type: "uint128" }],
   },
   {
     type: "function",
@@ -370,13 +374,12 @@ export const RUSH_ABI = [
  *
  * What none of this can check is the hand-written `GAME_ABI` drifting from
  * `RushoodGame.sol` itself. That guard is `packages/web/test/contracts.test.ts`, which
- * lives on #48 because #48 creates the same path; until it merges, nothing on this
- * branch pins the declared order to the contract.
+ * arrived with #48.
  *
- * The four remaining positional call sites - `VerifyTool.tsx`, `useBetHistory.ts` and
- * `useRelayerHealth.ts` (twice) - are deliberately left alone, because #48 is repacking
- * that struct and rewriting them here would collide with a change in review. They should
- * move onto this once #48 lands.
+ * #48 has landed, and its repack proved the point the hard way: the merge collided in
+ * `useBetHistory.ts`, where the two hard-coded orders disagreed about every field after
+ * `tier`. That site now decodes through `toBetView`. Three positional call sites remain
+ * - `VerifyTool.tsx` and `useRelayerHealth.ts` (twice) - and should move onto this too.
  */
 export type BetView = {
   player: Address;
