@@ -19,15 +19,19 @@ defaults:
   run:
     working-directory: packages/contracts
 
+# Actions are pinned by commit SHA, never by tag; the reasoning is at the same point in
+# ci.yml. Each SHA below is the one its release tag already pointed at when this file was
+# written, so pinning changed no version. The trailing comment records which release each
+# SHA is, and is the thing to update when a pin is deliberately moved.
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: npm
@@ -39,10 +43,10 @@ jobs:
     name: Compile and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: npm
@@ -54,16 +58,16 @@ jobs:
     name: Slither
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: npm
       - run: npm ci || npm install
 
-      - uses: crytic/slither-action@v0.4.0
+      - uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
         with:
           slither-config: packages/contracts/slither.config.json
           fail-on: medium
@@ -81,7 +85,7 @@ jobs:
           p.write_text(json.dumps(cfg, indent=2) + "\n")
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           # `.evm-standards.json` is a dotfile, and upload-artifact v4 skips hidden files
@@ -99,17 +103,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: npm
       - run: npm ci || npm install
 
       # Restore the corpus so campaigns compound instead of starting cold.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: packages/contracts/medusa-corpus
           key: medusa-corpus-${{ github.sha }}
@@ -120,7 +124,7 @@ jobs:
       # the binary got as far as "executable file not found in $PATH" and failed the job
       # in 30 seconds. The Slither job does not need this because slither-action brings
       # its own toolchain.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - name: Install crytic-compile
@@ -153,7 +157,7 @@ jobs:
           p.write_text(json.dumps(cfg, indent=2) + "\n")
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           # `.evm-standards.json` is a dotfile, and upload-artifact v4 skips hidden files
@@ -171,10 +175,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [slither, medusa]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           submodules: recursive
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - run: pip install pyyaml
@@ -184,7 +188,7 @@ jobs:
       # while the merge step below runs with its cwd already inside packages/contracts.
       # Downloading to `evidence` put the artifacts somewhere the merge never looked, and
       # the gate then failed `q-slither-clean` in CI for want of evidence CI had produced.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: evidence-*
           path: packages/contracts/evidence
@@ -211,7 +215,7 @@ jobs:
           python3 lib/evm-security-standards/gate/check.py --project . --json > gate-report.json || true
           python3 lib/evm-security-standards/gate/check.py --project .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: gate-report
