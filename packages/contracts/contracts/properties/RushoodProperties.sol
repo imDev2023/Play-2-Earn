@@ -46,6 +46,11 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///      docs/spec/RUSHOOD-game-spec.md rather than to the contract they are checking.
     ///      §4 locks a flat 5% edge, so the multiplier is `0.95 * N`. §5 locks
     ///      "maxPayout <= ~1% of the Treasury's current RUSH balance".
+    /// @dev The handler only ever picks a tier through `% game.TIER_COUNT()`, so this is
+    ///      unreachable while the contract's tier count and the spec's table agree. It
+    ///      exists to make them disagreeing loud rather than silent.
+    error TierOutsideSpecTable(uint8 tier);
+
     uint256 private constant SPEC_EDGE_NUM = 95;
     uint256 private constant SPEC_EDGE_DEN = 100;
     uint256 private constant SPEC_SOLVENCY_CAP_DEN = 100;
@@ -216,6 +221,17 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     }
 
     /// @notice What this actor could claim right now, in the same unit.
+    ///
+    /// @dev Worth stating plainly, because the property count otherwise overstates the
+    ///      coverage: with a single actor and a single pot, `invariant_solvency` reduces
+    ///      to `_activeLiability() <= rush.balanceOf(treasuryVault)`, which is the same
+    ///      inequality the first conservation ledger already asserts. It cannot fail
+    ///      unless `invariant_conservation` has failed first, so it is one property, not
+    ///      two. Both bindings are kept because they are the mixins' interface and the
+    ///      duplication is free, but the independent signal in this file comes from
+    ///      `invariant_payoutWithinCap` below - it is the only one that survives a wrong
+    ///      multiplier, and the only one that reads the spec's numbers rather than the
+    ///      contract's.
     function claimableBy(address actor) public view override returns (uint256) {
         return actor == address(this) ? _activeLiability() : 0;
     }
@@ -241,6 +257,13 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///         1 - a single win draining the pool. Unreachable from this campaign today
     ///         (see the header note on `whenEconomicsGovernable`), so it stands as the
     ///         assertion that would fire if that ever changed.
+    ///
+    /// The `invariant_` prefix is the vocabulary the property mixins already use -
+    /// `invariant_solvency` and `invariant_conservation` are named the same way, and the
+    /// campaign's output is read by that prefix. Those two live in the submodule, which
+    /// the lint glob does not reach, so this is the first one solhint has ever seen.
+    /// Renaming it to satisfy the linter would break the convention it belongs to.
+    // solhint-disable-next-line func-name-mixedcase
     function invariant_payoutWithinCap() public view {
         _check(
             game.maxPayout() <= game.treasuryBalance() / SPEC_SOLVENCY_CAP_DEN,
@@ -291,6 +314,6 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
         if (tier == 3) return 50;
         if (tier == 4) return 100;
         if (tier == 5) return 1000;
-        revert("properties: tier outside the spec's table");
+        revert TierOutsideSpecTable(tier);
     }
 }
