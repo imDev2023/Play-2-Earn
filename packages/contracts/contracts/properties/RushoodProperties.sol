@@ -19,11 +19,16 @@ import {RushoodGame} from "../RushoodGame.sol";
 /// can always be paid. Everything else - the edge, the burn, the tiers - is revenue.
 /// That sentence is what these properties try to break.
 ///
-/// It is genuinely falsifiable rather than tautological. Governance can move `edgeNum`,
-/// `edgeDen`, `solvencyCapDen` and `burnRateBps` while bets are in flight, and the burn
-/// removes treasury value on every settle. A campaign that raises the edge, drops the
-/// solvency denominator and then settles a winner is exactly the sequence that would
-/// expose an ordering mistake between the cap check and the payout.
+/// It is genuinely falsifiable rather than tautological, and it is worth being exact
+/// about where that falsifiability comes from, because an earlier version of this comment
+/// was not. `edgeNum`, `edgeDen` and `solvencyCapDen` are NOT reachable by this campaign:
+/// their setters carry `whenEconomicsGovernable`, `economicsGovernable` starts false, and
+/// nothing here flips it. Of the four economic knobs only `setBurnRate` is fuzzable, and
+/// it is gated to `whenBetInactive` besides.
+///
+/// What actually makes the campaign bite is `burnTreasuryProfit`, the one path that
+/// destroys treasury value outright, driven to its extreme by `handleBurnAllProfit`. That
+/// is the sequence verified to fail when the mid-bet guard is removed. See that handler.
 ///
 /// @dev Assertion mode. `EchidnaAssertions` reports through a bare `assert`, so a
 ///      violation surfaces as a panic against the named `invariant_` function plus the
@@ -36,6 +41,14 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     /// @dev Bankroll handed to the treasury. Comfortably above `DEFAULT_TREASURY_FLOOR`
     ///      so the campaign spends its time on play rather than on `TreasuryBelowFloor`.
     uint256 private constant TREASURY_SEED = 500_000_000 * 1e18;
+
+    /// @dev The spec's own numbers, restated here so the properties are anchored to
+    ///      docs/spec/RUSHOOD-game-spec.md rather than to the contract they are checking.
+    ///      §4 locks a flat 5% edge, so the multiplier is `0.95 * N`. §5 locks
+    ///      "maxPayout <= ~1% of the Treasury's current RUSH balance".
+    uint256 private constant SPEC_EDGE_NUM = 95;
+    uint256 private constant SPEC_EDGE_DEN = 100;
+    uint256 private constant SPEC_SOLVENCY_CAP_DEN = 100;
 
     Rushood internal immutable rush;
     Treasury internal immutable treasuryVault;
@@ -207,14 +220,77 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
         return actor == address(this) ? _activeLiability() : 0;
     }
 
+    /// @notice The solvency cap the spec locks, checked against the live bet.
+    ///
+    /// @dev The gap this closes: `invariant_solvency` above compares the open bet's
+    ///      liability against the treasury's whole balance, so it says "solvent" and
+    ///      stops there. Spec §5 locks something strictly stronger - "maxPayout <= ~1%
+    ///      of the Treasury's current RUSH balance" - and a system can satisfy the first
+    ///      while violating the second on every bet.
+    ///
+    ///      Three assertions, each falsifiable on its own:
+    ///
+    ///      1. The contract's payout never exceeds the spec's `0.95 x N x stake`. This is
+    ///         the one the mixins cannot make, because `_activeLiability` used to derive
+    ///         its expectation from `game.payoutFor` - a wrong multiplier would have
+    ///         inflated expectation and payout together and cancelled out.
+    ///      2. The open bet's win stays inside `maxPayout`. Deleting the cap check in
+    ///         `placeBet` breaks this one directly.
+    ///      3. `maxPayout` stays within the spec's 1%. This catches a governance action
+    ///         that loosens `solvencyCapDen`, which the setter currently permits down to
+    ///         1 - a single win draining the pool. Unreachable from this campaign today
+    ///         (see the header note on `whenEconomicsGovernable`), so it stands as the
+    ///         assertion that would fire if that ever changed.
+    function invariant_payoutWithinCap() public view {
+        _check(
+            game.maxPayout() <= game.treasuryBalance() / SPEC_SOLVENCY_CAP_DEN,
+            "solvency cap: maxPayout exceeds the spec's 1% of treasury"
+        );
+
+        if (game.activeBetId() == 0 || openStake == 0) return;
+
+        _check(
+            game.payoutFor(openTier, openStake) <= _specPayout(openTier, openStake),
+            "payout: contract pays more than the spec's 0.95 x N x stake"
+        );
+        _check(
+            game.payoutFor(openTier, openStake) <= game.maxPayout(),
+            "solvency cap: the open bet's win exceeds maxPayout"
+        );
+    }
+
     /// @dev What the treasury owes on the open bet, taking the worse of the two ways it
-    ///      can resolve. A win pays `payoutFor`; a timeout returns the stake. Payout is
+    ///      can resolve. A win pays the multiplier; a timeout returns the stake. Payout is
     ///      always the larger (0.95 x N x stake, N >= 2), but taking the max keeps the
-    ///      property honest if the edge or the tier table ever changes.
+    ///      property honest if the tier table ever changes.
+    ///
+    ///      The payout leg is the SPEC's formula, not `game.payoutFor`. Calling the
+    ///      contract here would make the property circular in the one dimension that
+    ///      matters: a multiplier bug would raise the expectation and the payout by the
+    ///      same amount, and conservation would go on holding while every winner was paid
+    ///      the wrong number. `invariant_payoutWithinCap` pins the two together.
     function _activeLiability() internal view returns (uint256) {
         if (game.activeBetId() == 0 || openStake == 0) return 0;
 
-        uint256 payout = game.payoutFor(openTier, openStake);
+        uint256 payout = _specPayout(openTier, openStake);
         return payout > openStake ? payout : openStake;
+    }
+
+    /// @dev Spec §4's payout, derived from the spec's own numbers. The tier table is
+    ///      restated rather than read from `game.odds` for the same non-circularity
+    ///      reason; §4 locks these six values.
+    function _specPayout(uint8 tier, uint256 stake) internal pure returns (uint256) {
+        return (stake * SPEC_EDGE_NUM * _specOdds(tier)) / SPEC_EDGE_DEN;
+    }
+
+    /// @dev Spec §4: tiers are 1-in-2, 4, 10, 50, 100, 1000.
+    function _specOdds(uint8 tier) internal pure returns (uint256) {
+        if (tier == 0) return 2;
+        if (tier == 1) return 4;
+        if (tier == 2) return 10;
+        if (tier == 3) return 50;
+        if (tier == 4) return 100;
+        if (tier == 5) return 1000;
+        revert("properties: tier outside the spec's table");
     }
 }
