@@ -39,6 +39,25 @@ const config: HardhatUserConfig = {
     version: "0.8.24",
     settings: {
       optimizer: { enabled: true, runs: 200 },
+      /**
+       * Set explicitly because Hardhat's default here is `paris`, not solc 0.8.24's own
+       * default - so leaving it unset silently gave up PUSH0 and MCOPY on a chain that
+       * supports both. The evm-security profile requires this be a decision, not a default.
+       *
+       * `cancun` is chosen from what the chain actually accepts, not from what its parent
+       * family is assumed to support. Both 4663 and 46630 report ArbOS 61, and an
+       * `eth_call` probe with a state override confirmed on each: BASEFEE, PUSH0, MCOPY,
+       * TSTORE and TLOAD all execute, while a deliberate `0xfe` control is rejected as an
+       * invalid opcode - so the probe distinguishes support from a blanket accept.
+       *
+       * The one Cancun opcode this chain does NOT have is BLOBBASEFEE, which the node
+       * rejects by name ("BLOBBASEFEE is not supported on Arbitrum"); BLOBHASH is the same
+       * story. That is safe here only because solc emits those two solely when the source
+       * reads `block.blobbasefee` or calls `blobhash()`, and nothing does. `test/EvmTarget.ts`
+       * is the guard that keeps it that way - without it this setting is one blob-opcode
+       * reference away from producing bytecode the chain cannot run.
+       */
+      evmVersion: "cancun",
     },
   },
   networks: {

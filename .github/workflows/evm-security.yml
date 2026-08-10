@@ -154,10 +154,15 @@ jobs:
           python-version: "3.12"
       - run: pip install pyyaml
 
+      # Must be the package directory, not the workspace root. `defaults.run` only
+      # applies to `run:` steps, so an action's `path:` resolves against the workspace -
+      # while the merge step below runs with its cwd already inside packages/contracts.
+      # Downloading to `evidence` put the artifacts somewhere the merge never looked, and
+      # the gate then failed `q-slither-clean` in CI for want of evidence CI had produced.
       - uses: actions/download-artifact@v4
         with:
           pattern: evidence-*
-          path: evidence
+          path: packages/contracts/evidence
 
       - name: Merge evidence
         run: |
@@ -171,8 +176,15 @@ jobs:
           base.write_text(json.dumps(cfg, indent=2) + "\n")
           PY
 
+      # `--json` prints the report rather than writing it, so the file the upload wants
+      # has to be redirected into existence. Without this the upload had nothing to
+      # collect and the report was only ever readable in the log.
       - name: Run gate
-        run: python3 lib/evm-security-standards/gate/check.py --project .
+        run: |
+          # First pass writes the artifact and must never fail the step, or a red gate
+          # would take its own report down with it. The second pass is the gate.
+          python3 lib/evm-security-standards/gate/check.py --project . --json > gate-report.json || true
+          python3 lib/evm-security-standards/gate/check.py --project .
 
       - uses: actions/upload-artifact@v4
         if: always()

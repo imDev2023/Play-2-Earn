@@ -26,3 +26,10 @@ packages/web/test-results/
 *.log
 coverage/
 *.tsbuildinfo
+
+# Security tooling scratch. Medusa's corpus is a cache that compounds across runs and is
+# restored from CI cache, crytic-export is crytic-compile's intermediate build, and
+# slither_results.json is a report - none of the three is source.
+packages/contracts/medusa-corpus/
+packages/contracts/crytic-export/
+packages/contracts/slither_results.json

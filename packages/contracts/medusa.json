@@ -8,7 +8,9 @@
     "callSequenceLength": 100,
     "corpusDirectory": "medusa-corpus",
     "coverageEnabled": true,
-    "targetContracts": [],
+    "targetContracts": [
+      "RushoodProperties"
+    ],
     "targetContractsBalances": [],
     "constructorArgs": {},
     "deployerAddress": "0x30000",
@@ -44,7 +46,7 @@
         }
       },
       "propertyTesting": {
-        "enabled": true,
+        "enabled": false,
         "testPrefixes": [
           "invariant_",
           "property_",
@@ -72,9 +74,7 @@
       "target": ".",
       "solcVersion": "",
       "exportDirectory": "",
-      "args": [
-        "--foundry-compile-all"
-      ]
+      "args": []
     }
   },
   "logging": {

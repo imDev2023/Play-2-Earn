@@ -1,7 +1,69 @@
 {
   "profile": "robinhood-4663",
   "framework": "hardhat",
-  "attestations": {},
-  "waivers": {},
+  "attestations": {
+    "arch-boundary": "Deliberate and documented in docs/spec/RUSHOOD-game-spec.md. On-chain: stake custody, the commit-reveal, outcome derivation, payout, burn, refund. Off-chain: only the relayer, which holds the hash chain and broadcasts settleBet. The boundary is enforced rather than assumed - refund(betId) is permissionless and works while paused, so the off-chain half cannot strand a player's funds.",
+    "arch-actors": "Five: governance (policy), guardian (emergency pause), relayer (settle/rotate, immutable), Treasury.deployer (one-shot setGame), and the player. Each is a separate address in deployment; hardhat.config.ts takes TESTNET_PRIVATE_KEYS as a list precisely so deployer/relayer/player/guardian are genuinely distinct and access-control tests cannot pass for the wrong reason.",
+    "arch-upgrade-decision": "Rigid, by choice. No proxy, no upgrade path, no admin storage. Rushood is ownerless and fixed-supply with no mint path; RushoodGame and Treasury are non-upgradeable. A change means a new deployment and a migration, which is the accepted cost of not carrying proxy hazards on a real-value game.",
+    "arch-circuit-breaker": "OZ Pausable, scoped per function and deliberately asymmetric: placeBet is whenNotPaused, while settleBet and refund are NOT. A pause stops new risk but can never trap an in-flight bet - refund(betId) stays callable by anyone while paused. Guardian-only, separate from governance. Covered by test/Governance.ts.",
+    "ac-roles-initialised": "RushoodGame's constructor sets governance and guardian to the deployer and takes relayer as a non-zero-checked immutable, so no role is ever zero. Treasury.game is intentionally zero until setGame breaks the Treasury<->Game constructor cycle; that window fails closed, because pay() and burn() revert NotGame while it is unset, and setGame is deployer-only and one-shot.",
+    "arith-safecast": "Two downcasts in production, both provably in range. activeBetId = uint128(betId) where betId is ++betCounter and betCounter is itself uint128, so the value cannot exceed the target type. placedAt = uint64(block.timestamp), which does not overflow uint64 for any reachable timestamp. No other narrowing casts exist outside contracts/mocks.",
+    "arith-mul-before-div": "Checked expression by expression. payoutFor: (stake * edgeNum * odds) / edgeDen. maxBet: (treasuryBalance * edgeDen) / (solvencyCapDen * edgeNum * odds). burn: (stake * burnRateBps) / BPS_DEN. maxPayout is a single division. Every multiplication precedes every division; no intermediate is truncated early.",
+    "arith-rounding-documented": "Documented per formula at the definition. payoutFor carries the reasoning explicitly ('Integer division rounds the payout down (in the house's favour)'), and maxBet rounds down so the advertised ceiling is always one the contract accepts. Directional rounding is a stated product rule: max rounds down, min rounds up. Tested by test/RoundingDirection.ts.",
+    "arith-no-hardcoded-decimals": "The system handles exactly one asset - RUSH, its own token - which is fixed at 18 decimals by OpenZeppelin's default and cannot change, since Rushood is ownerless with no mint path and no decimals override. The 1e18 constants are denominated in that one immutable asset rather than assuming a decimal count for a foreign token. No external token is ever priced or scaled.",
+    "arith-boundaries-tested": "test/OddsTiers.ts covers minBet, maxBet(tier) and the treasury floor at and either side of the boundary across all six tiers; test/RoundingDirection.ts adds awkward amounts chosen to leave a remainder in each division. Web-side bounds are pinned separately in packages/web/test/bet-validity.test.ts.",
+    "cf-cei": "settleBet writes bet.settled, activeBetId = 0 and currentCommit = reveal before any external call, then pays, then burns - so the burn can never starve a payout and no external call sees intermediate state. refund sets settled and clears activeBetId before treasury.pay. Verified by reading every state-mutating function; there are no exceptions.",
+    "cf-readonly-reentrancy": "Considered and structurally absent. The only views another protocol would read - treasuryBalance, maxBet, maxPayout, payoutFor - derive from RUSH balances, and RUSH is a plain OZ ERC20 with no transfer hooks, so no external call can observe state mid-update. There is no reentrancy point from which a stale view could be read.",
+    "cf-callbacks": "Enumerated. ERC-777: none, RUSH is a plain ERC20 and no ERC-1820 registry is used. ERC-1155: none. ERC-721: exactly one surface, the Uniswap v3 position NFT held by RushoodLPLock, which inherits OpenZeppelin's ERC721Holder so onERC721Received is the audited implementation rather than a hand-written one.",
+    "cf-no-unbounded-loops": "There are no loops at all in the production contracts - RushoodGame, Rushood, Treasury, RushoodLPLock, RushoodVesting and RushoodTimelock contain no for or while statement. The game's one-active-bet invariant means settlement is O(1) by construction rather than by iteration.",
+    "env-no-msgvalue-loop": "RushoodGame has no payable function and no multicall, so there is no msg.value to misread, in a loop or otherwise. The game is denominated entirely in RUSH; ETH never enters it.",
+    "env-encode-not-packed": "abi.encodePacked appears twice and neither is ambiguous. keccak256(abi.encodePacked(reveal)) hashes a single bytes32. The outcome hash packs (bytes32, uint256, uint256) - three fixed-width values, so no two encodings can collide; the ambiguity abi.encode exists to prevent needs two adjacent dynamic types, and there are none. The verifier package mirrors the same packing and is pinned against the contract by test.",
+    "q-dead-code": "Slither runs with its dead-code and unused-state detectors enabled (only naming-convention and solc-version are excluded) and reports neither against the production contracts. Dependencies are OpenZeppelin only.",
+    "q-events": "Every privileged action emits. Governance: GovernanceTransferred, GuardianTransferred, EconomicsGovernableSet, MinBetUpdated, EdgeUpdated, SolvencyCapUpdated, TreasuryFloorUpdated, BurnRateUpdated, TreasuryProfitBurned. Relayer: ChainRotated. Guardian: Paused/Unpaused via OZ. Play: BetPlaced, BetSettled, StakeBurned, BetRefunded. This attestation found one gap and it was fixed rather than excused - Treasury.setGame emitted nothing, and it is the call that grants an address the power to move every token held; it now emits GameSet.",
+    "v-fuzz-depth": "Medusa, assertion mode, against contracts/properties/RushoodProperties.sol. Recorded depth: 50,000 transactions locally (12 tests, 0 failures) and 30,000 in the falsification run below. CI runs 20,000 per pull request and the full testLimit of 500,000 nightly. The campaign was verified falsifiable rather than assumed: removing the mid-bet guard in burnTreasuryProfit makes invariant_conservation fail within seconds, and restoring it returns the suite to green.",
+    "ops-monitoring": "System-specific, not generic. The relayer service watches settlement lag against the contract's own SETTLE_TIMEOUT, hash-chain exhaustion (alerting when rotation is overdue rather than merely due), and head-block liveness - each an invariant of this design rather than an anomaly threshold. Two independent Healthchecks.io checks (dead-man switch and explicit alerts); the service refuses to boot if the two URLs are equal. See docs/ops and packages/contracts/scripts/service.",
+    "ops-postdeploy": "scripts/launch-checklist.ts, 23 pass/fail assertions run against the live deployment, exiting non-zero on any failure and writing deployments/checklist-<network>.json so the result is checkable rather than a claim in a terminal. Run 23/23 against testnet 46630 on 2026-07-28. scripts/verify-and-publish.ts renders that file into the published address list."
+  },
+  "waivers": {
+    "oracle-staleness": {
+      "reason": "No contract in this project reads a price feed. RUSHOOD is denominated entirely in its own fixed-supply RUSH token and its outcome is a commit-reveal hash, not a market value. There is no oracle to make stale."
+    },
+    "oracle-decimals": {
+      "reason": "No price feed is read, so there are no feed decimals to hardcode."
+    },
+    "oracle-bounds": {
+      "reason": "No price feed is read, so there are no minAnswer/maxAnswer bounds."
+    },
+    "oracle-revert-handled": {
+      "reason": "No oracle call exists to wrap, and there is no feed address to replace, so the governance path this asks for would guard nothing."
+    },
+    "oracle-sequencer": {
+      "reason": "Two independent reasons. First, nothing here reads a price, so there is no read to gate on sequencer liveness. Second, and worth recording because the profile leaves it OPEN: there is no L2 sequencer uptime feed on chain 4663 at all. Chainlink does not list one, the 4663 feed registry has no such entry, and eth_getCode returns 0 bytes at the addresses used on Arbitrum, OP and Base. The Robinhood docs recommend the guard and ship sample code for it, but it cannot be implemented on this chain. See resources/01-robinhood-chain.md."
+    },
+    "oracle-slippage": {
+      "reason": "There is no swap-shaped function in the deployed system. placeBet takes a stake at a fixed, published multiplier and settleBet pays a formula, so there is no price to move between submission and execution and nothing for a minOut to protect. The only AMM interaction is the one-off LP seeding in scripts/seed-pool.ts, which is a deploy-time operator action at a pinned price, not a user-facing path."
+    },
+    "chain-erc8056-simulated": {
+      "reason": "The profile's headline hazard, and it does not reach this project. ERC-8056 bites code that reads a tokenized-equity price and then applies uiMultiplier() on top of a feed that already includes it. No contract here reads a price, holds a stock token, or references uiMultiplier; RUSH is an ordinary fixed-supply ERC20 with no corporate actions. Adding a multiplier simulation to a game that never reads a multiplier would be theatre - it would assert that unused code stays unused. Waived deliberately rather than satisfied, on the owner's standing decision."
+    },
+    "arch-proxy-checks": {
+      "reason": "Nothing is proxied. See arch-upgrade-decision: the contracts are rigid by choice, with no delegatecall, no implementation slot and no initializer, so the \u00a72.8 proxy hazards and slither-check-upgradeability have no target."
+    },
+    "ac-eip712": {
+      "reason": "There is no signature scheme. No contract calls ecrecover, implements permit, or accepts a signed message; every privileged action is an ordinary authenticated call from governance, guardian or the relayer. RUSH deliberately has no ERC20Permit, so there is no off-chain approval path either."
+    },
+    "ac-invariants-exist": {
+      "reason": "Framework mismatch in the checklist, not a missing test. This item greps for AccessControlProperties, which is the Foundry binding and imports forge-std; it cannot compile in a Hardhat project. The package's own Hardhat binding is named AccessControlSentinelProperties and inverts the design (exclude privileged addresses from the fuzzer's sender set, then assert privileged state never moves), so the grep cannot match on this framework however the properties are written. Unlike env-opcodes and v-invariants-in-ci, this item has no -hardhat variant. Access control is covered instead by test/Governance.ts, which asserts every privileged entry point reverts for a non-holder, plus the automated ac-no-tx-origin and ac-ecrecover-zero checks which do pass."
+    },
+    "arith-rounding-tested": {
+      "reason": "Same framework mismatch, and the package says so itself. RoundingDirectionProperties needs vm.snapshotState and vm.revertToState to probe a round trip without perturbing the campaign, and templates/hardhat/README.md states plainly that it is not ported to Hardhat because there is no portable equivalent. It recommends writing the probe as an ordinary unit test instead, which is test/RoundingDirection.ts: awkward amounts across all six tiers, asserting a winner is never paid more than the exact 0.95 x N x stake, that maxBet never advertises a stake whose win exceeds maxPayout, and that the burn never takes an extra wei."
+    },
+    "cf-nonreentrant": {
+      "reason": "No ReentrancyGuard, deliberately, and the protection is structural rather than absent. Strict CEI is followed in every state-mutating function (see cf-cei), and the only external calls are RUSH transfers - a plain OZ ERC20 with no transfer hooks and no ERC-777 behaviour, so a recipient gets no execution during the call. On top of that the contract admits one active bet at a time and clears activeBetId before paying, so a re-entered placeBet would revert BetAlreadyActive and a re-entered settleBet would revert NoActiveBet. Adding a guard would cost gas on the hottest path to defend against a callback that cannot occur. Revisit immediately if the game is ever pointed at a token it does not own."
+    },
+    "cf-pull-over-push": {
+      "reason": "Push, deliberately. A win is paid inside settleBet rather than left to claim, because settlement is already a relayer-driven transaction the player does not send - making the payout pull would mean a player has to send a second transaction to receive money the house already owes them, which is worse custody UX and a worse trust story for a game. The usual objection to push, that a hostile recipient can block the loop and grief everyone else, does not apply: there is no loop, exactly one recipient per settlement, and RUSH has no transfer hook with which to revert. refund(betId) is the pull-shaped counterpart and is permissionless, so a player is never dependent on the push path succeeding."
+    }
+  },
   "evidence": {}
 }
