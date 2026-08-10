@@ -10,13 +10,13 @@ It deliberately does not restate what the linked files already say.
 
 | Path | Why |
 |---|---|
-| `AGENTS.md` | Repo conventions, the prettier trap, and the **review cadence**. All of it is on `main` now (#46 and #52 landed). |
+| `AGENTS.md` | Repo conventions, the prettier trap, and the **review cadence**. |
 | `docs/spec/RUSHOOD-game-spec.md` | The product spec, and the authority for the Spec axis of `/code-review`. |
 | `docs/agents/issue-tracker.md` | Issues live as GitHub issues, driven by `gh`. |
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06, on `main` via #54. The repo is public so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts now import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06. **On `chore/wire-security-gate` only - #54 is open, not merged.** The repo is public so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts now import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
 | `resources/01-robinhood-chain.md` | Untracked. Crawled platform facts for chain 4663: Arbitrum Nitro L2, ArbOS semantics, ERC-8056, the 48-hour feed gap, and the confirmation that **there is no L2 sequencer uptime feed on 4663** - which closes one of the profile's two `OPEN:` answers. |
 | `resources/web3-security.md` | Untracked; moved here from the repo root. Four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
 
@@ -54,9 +54,8 @@ Any consumer derives its field order from the ABI and never hard-codes one; the 
 Three positional sites remain - `VerifyTool.tsx` and `useRelayerHealth.ts` twice. Migrate them onto `toBetView`.
 
 **The durable lesson: this trap bit three times *inside the code written to prevent it*, and a fourth time during the merge that was supposed to end it.**
-`toBetView` shipped positional, then fixed the order but cast away the names; #53, the guard for exactly this, shipped ignoring `indexed` and treating event argument names as documentation.
-Then #48's repack collided with #51's `hydrate` and the two hard-coded orders disagreed about every field after `tier` - a conflict git could show, but only because both sides happened to touch the same lines. Had they not, it would have merged clean and silently wrong. `hydrate` now decodes through `toBetView`.
-No test caught any of them. Review and the merge caught them. That is the entire argument for the cadence.
+`toBetView` shipped positional, then fixed the order but cast away the names. #53, the guard for exactly this, shipped ignoring `indexed`. Then #48's repack collided with #51's `hydrate`; git showed that conflict only because both sides happened to touch the same lines, and it would otherwise have merged clean and silently wrong.
+No test caught any of them. Review and the merge caught them all. That is the entire argument for the cadence.
 
 **The two e2e suites want opposite worlds.**
 `playwright.config.ts` asserts the disconnected UI and its admin specs assert the chain is *unreachable*, so it needs the Hardhat node stopped.
@@ -94,13 +93,13 @@ It confirms `prevrandao` is a constant and there is no VRF on the production pat
 The profile's headline hazard, the ERC-8056 multiplier, **does not apply here** (no contract reads a price) and is waived in `.evm-standards.json` with the reasoning.
 One answer in that profile is still `OPEN:` - re-org depth. Do not invent it. The other, the sequencer uptime feed, is now closed: **there is no such feed on 4663 at all**, so the guard the Robinhood docs recommend cannot be built. See `resources/01-robinhood-chain.md`.
 
-**The security gate is wired (#54). 37 pass, 0 fail, 10 unanswered.**
+**The security gate is wired on #54, which is open and reviewed-with-findings, not merged.** 37 pass, 0 fail, 10 unanswered in CI.
 `python3 lib/evm-security-standards/gate/check.py --project .` from `packages/contracts`.
-Locally it reports 2 failures, and that is correct rather than broken: `q-slither-clean` and `v-invariants-in-ci-hardhat` read evidence that only CI produces, merged into `.evm-standards.json` by the gate job.
+Locally it reports 35 pass and 2 failures, and that is correct rather than broken: `q-slither-clean` and `v-invariants-in-ci-hardhat` read evidence that only CI produces, merged into `.evm-standards.json` by the gate job.
 
 **The 10 unanswered items are load-bearing, not leftovers.**
 `check.py` passes an attested item on **any non-empty string**, so writing "no, because ..." into `attestations` silently turns a negative into a pass.
-Anything untrue is therefore left absent: the audit, the bounty, the rehearsed runbook, the security contact, the multisig handover, coverage, fork tests, and `ops-bytecode`.
+Anything untrue is therefore left absent. All ten, because a partial list here once read as exhaustive: `arch-multisig`, `arch-value-cap`, `q-no-warnings-hardhat`, `v-fork-tests`, `v-coverage`, `v-audit`, `v-bounty`, `ops-runbook`, `ops-contact`, `ops-bytecode`.
 Never "answer" one to tidy the report.
 
 **`evmVersion` is `cancun`, chosen by probing the chain rather than from the parent family.**
@@ -118,7 +117,22 @@ And a release archive is not its toolchain: Medusa shells out to `crytic-compile
 **A bounded fuzz handler decides which states the campaign can reach.**
 The solvency property could not find a deliberately planted break, because the handler burned a uniformly random slice of the treasury and the violating region was the last ~1% of that range.
 Put the extremes in as their own zero-argument calls rather than trusting the sampler to land on them. `handleBurnAllProfit` in `contracts/properties/RushoodProperties.sol` is that fix.
-Corollary: **prove the property fails on a planted bug before believing it passes** - the run that "passed" first was measuring nothing.
+Corollary, and the rule that governs this whole area: **prove the check fails on a planted bug before believing it passes** - the run that "passed" first was measuring nothing.
+
+**A check that recomputes the implementation and then compares that recomputation to itself passes for every input.**
+The #54 review found the pure form of it. `test/RoundingDirection.ts` computed `const burned = (stake * bps) / den` in TypeScript and asserted `burned * den <= stake * bps` - an identity of integer division, true whatever the contract does, and it never called the contract at all.
+It reads exactly like a real test, and a waiver pointed at it as the evidence for `arith-rounding-tested`.
+Anchor an assertion to the **spec's numbers**, and read the actual value **back off the chain**. Both halves matter: the rewrite settles real bets and reads the `StakeBurned` amount plus the `totalSupply` delta.
+The same defect in property form is subtler: `_activeLiability` derived its expectation from `game.payoutFor`, so a wrong multiplier would inflate expectation and payout **together** and conservation would keep holding while every winner was paid the wrong number. `invariant_payoutWithinCap` is the fix and is the only property that catches that class.
+
+**An attestation is only as good as the reading behind it, and reading a file is not reading a contract.**
+`cf-no-unbounded-loops` claimed six named contracts contain no loop. True of the six *files*; false of `RushoodTimelock`, which inherits OZ `TimelockController` and its caller-supplied array loops.
+Nothing counter-checks this: `slither.config.json` sets `exclude_dependencies: true`, so static analysis never looks at inherited code.
+Three more attestations were stale in the same direction, each because the PR's own new files changed a count the attestation had stated as absolute.
+When an attestation says "there are exactly N" or "none exist", re-grep it after every commit in the same PR.
+
+**Actions are pinned by SHA, and the new workflow forgot.**
+The rule is stated in a comment at `.github/workflows/ci.yml:17`. All 17 `uses:` in the new 218-line `evm-security.yml` are tag-pinned, and `ci.yml`'s own `connected-e2e` job (from #49) is too. Unfixed as of `a86aad2`.
 
 **Check for path collisions before adding a file while another PR is in review** with `git diff main...<other-branch> --stat`. An ABI-order pin once landed at exactly the path #48 was already creating.
 
