@@ -17,7 +17,8 @@ It deliberately does not restate what the linked files already say.
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
 | `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06, on `main` via #54. The repo is public so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts now import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
-| `web3-security.md` | Untracked at the repo root, four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
+| `resources/01-robinhood-chain.md` | Untracked. Crawled platform facts for chain 4663: Arbitrum Nitro L2, ArbOS semantics, ERC-8056, the 48-hour feed gap, and the confirmation that **there is no L2 sequencer uptime feed on 4663** - which closes one of the profile's two `OPEN:` answers. |
+| `resources/web3-security.md` | Untracked; moved here from the repo root. Four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
 
 ## Deployment reality
 
