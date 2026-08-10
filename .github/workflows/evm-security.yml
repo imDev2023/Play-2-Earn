@@ -108,6 +108,17 @@ jobs:
           key: medusa-corpus-${{ github.sha }}
           restore-keys: medusa-corpus-
 
+      # Medusa shells out to crytic-compile to build the target, and crytic-compile is a
+      # Python package rather than part of the Medusa release archive. Installing only
+      # the binary got as far as "executable file not found in $PATH" and failed the job
+      # in 30 seconds. The Slither job does not need this because slither-action brings
+      # its own toolchain.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install crytic-compile
+        run: pip install crytic-compile
+
       - name: Install Medusa
         run: |
           curl -sSL -o medusa.tar.gz \
