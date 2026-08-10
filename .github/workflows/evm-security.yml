@@ -84,6 +84,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          # `.evm-standards.json` is a dotfile, and upload-artifact v4 skips hidden files
+          # unless told otherwise. Combined with the default `if-no-files-found: warn`,
+          # the evidence jobs uploaded nothing and still went green, so the gate failed
+          # downstream for want of evidence that had in fact been produced. Erroring here
+          # is the point: a miss must not be survivable a second time.
+          include-hidden-files: true
+          if-no-files-found: error
           name: evidence-slither
           path: packages/contracts/.evm-standards.json
 
@@ -149,6 +156,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
+          # `.evm-standards.json` is a dotfile, and upload-artifact v4 skips hidden files
+          # unless told otherwise. Combined with the default `if-no-files-found: warn`,
+          # the evidence jobs uploaded nothing and still went green, so the gate failed
+          # downstream for want of evidence that had in fact been produced. Erroring here
+          # is the point: a miss must not be survivable a second time.
+          include-hidden-files: true
+          if-no-files-found: error
           name: evidence-medusa
           path: packages/contracts/.evm-standards.json
 
