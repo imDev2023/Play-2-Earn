@@ -16,7 +16,7 @@ It deliberately does not restate what the linked files already say.
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06. Committed on branch `chore/evm-security-gate`, not yet on `main`. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06, on `main` via #54. The repo is public so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts now import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
 | `web3-security.md` | Untracked at the repo root, four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
 
 ## Deployment reality
@@ -93,10 +93,20 @@ It confirms `prevrandao` is a constant and there is no VRF on the production pat
 The profile's headline hazard, the ERC-8056 multiplier, **does not apply here**: no contract reads a price. The gate blocks on it anyway, so it wants a written waiver, not a fix.
 Two answers in that profile are still `OPEN:` - re-org depth, and the sequencer uptime feed address. Do not invent either.
 
-**The security gate is installed but unwired.**
+**The security gate is wired (#54). 37 pass, 0 fail, 10 unanswered.**
 `python3 lib/evm-security-standards/gate/check.py --project .` from `packages/contracts`.
-Last run: 11 pass, 8 fail, 41 unanswered - which reads as "never filled in", not "broken". Slither passes by hand (one medium finding, in a mock); the gate fails it only because CI records no evidence into `.evm-standards.json`.
-The one real code finding: **`evmVersion` is unset in `hardhat.config.ts`**, silently defaulting to `paris`, and the profile says set it explicitly. The supported version for 4663 is not documented there, so it needs a research pass, not a guess.
+Locally it reports 2 failures, and that is correct rather than broken: `q-slither-clean` and `v-invariants-in-ci-hardhat` read evidence that only CI produces, merged into `.evm-standards.json` by the gate job.
+
+**The 10 unanswered items are load-bearing, not leftovers.**
+`check.py` passes an attested item on **any non-empty string**, so writing "no, because ..." into `attestations` silently turns a negative into a pass.
+Anything untrue is therefore left absent: the audit, the bounty, the rehearsed runbook, the security contact, the multisig handover, coverage, fork tests, and `ops-bytecode`.
+Never "answer" one to tidy the report.
+
+**`evmVersion` is `cancun`, chosen by probing the chain rather than from the parent family.**
+Both 4663 and 46630 report ArbOS 61 and accept BASEFEE, PUSH0, MCOPY, TSTORE and TLOAD; they reject **BLOBBASEFEE** by name, and BLOBHASH with it.
+That is safe only because solc emits those two solely when the source asks for them, so `test/EvmTarget.ts` guards it. Hardhat's default here was `paris`, which is not solc 0.8.24's own default.
+
+**Slither did *not* pass by hand before #54.** It exited non-zero at `fail_on: medium` on a `locked-ether` finding in `MockNonfungiblePositionManager`. Mocks and the properties harness are now filtered like `test/` and `script/`.
 
 **Check for path collisions before adding a file while another PR is in review.**
 `git diff main...<other-branch> --stat` .
