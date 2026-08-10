@@ -91,8 +91,8 @@ PR #48 sat red for a day behind a body that said "typecheck clean".
 **Chain 4663 has no randomness, and that is why this game is shaped as it is.**
 `packages/contracts/lib/evm-security-standards/profiles/robinhood-4663.md` is the authority; read it before answering any chain question, never from general knowledge.
 It confirms `prevrandao` is a constant and there is no VRF on the production path, so the bespoke commit-reveal is not over-engineering, it is the only option.
-The profile's headline hazard, the ERC-8056 multiplier, **does not apply here**: no contract reads a price. The gate blocks on it anyway, so it wants a written waiver, not a fix.
-Two answers in that profile are still `OPEN:` - re-org depth, and the sequencer uptime feed address. Do not invent either.
+The profile's headline hazard, the ERC-8056 multiplier, **does not apply here** (no contract reads a price) and is waived in `.evm-standards.json` with the reasoning.
+One answer in that profile is still `OPEN:` - re-org depth. Do not invent it. The other, the sequencer uptime feed, is now closed: **there is no such feed on 4663 at all**, so the guard the Robinhood docs recommend cannot be built. See `resources/01-robinhood-chain.md`.
 
 **The security gate is wired (#54). 37 pass, 0 fail, 10 unanswered.**
 `python3 lib/evm-security-standards/gate/check.py --project .` from `packages/contracts`.
@@ -109,9 +109,18 @@ That is safe only because solc emits those two solely when the source asks for t
 
 **Slither did *not* pass by hand before #54.** It exited non-zero at `fail_on: medium` on a `locked-ether` finding in `MockNonfungiblePositionManager`. Mocks and the properties harness are now filtered like `test/` and `script/`.
 
-**Check for path collisions before adding a file while another PR is in review.**
-`git diff main...<other-branch> --stat` .
-An ABI-order pin was added at exactly the path #48 already creates, which is the collision it was meant to prevent.
+**A green CI step is not proof the step did anything.**
+Three of the gate's five defects were steps that succeeded while achieving nothing, and each cost a full CI round trip to find.
+`upload-artifact@v4` skips **hidden files** by default, so uploading `.evm-standards.json` produced no artifact and warned rather than failed - the gate then failed downstream for want of evidence CI had just recorded. Pair `include-hidden-files: true` with `if-no-files-found: error`; the second half is the one that matters.
+`defaults.run.working-directory` does **not** apply to an action's `path:`, so a download and the `run` step consuming it can silently disagree about where they are.
+And a release archive is not its toolchain: Medusa shells out to `crytic-compile`, a separate Python package.
+
+**A bounded fuzz handler decides which states the campaign can reach.**
+The solvency property could not find a deliberately planted break, because the handler burned a uniformly random slice of the treasury and the violating region was the last ~1% of that range.
+Put the extremes in as their own zero-argument calls rather than trusting the sampler to land on them. `handleBurnAllProfit` in `contracts/properties/RushoodProperties.sol` is that fix.
+Corollary: **prove the property fails on a planted bug before believing it passes** - the run that "passed" first was measuring nothing.
+
+**Check for path collisions before adding a file while another PR is in review** with `git diff main...<other-branch> --stat`. An ABI-order pin once landed at exactly the path #48 was already creating.
 
 **Ports.** Never use 3000 or 3100; other projects bind them.
 Confirm the title says RUSHOOD before trusting anything you see.
