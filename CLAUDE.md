@@ -29,9 +29,14 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
-**That debt is now owed three times over**, which is the argument for paying it once rather than per change: #48 repacked `RushoodGame`'s storage, and #54 moves `evmVersion` to `cancun` and adds `Treasury.GameSet`.
-The deployed 46630 bytecode no longer matches the tree on any of the three counts.
+**That debt is now owed four times over**, which is the argument for paying it once rather than per change: #48 repacked `RushoodGame`'s storage, #54 moved `evmVersion` to `cancun` and added `Treasury.GameSet`, and #47 packed the five economic parameters into one slot.
+The deployed 46630 bytecode no longer matches the tree on any of the four counts.
 Do it once, and pay the manual Blockscout verify once.
+
+**#47 is the first of the four to change the public ABI, not just the bytecode**, so it is the one that can break a consumer rather than merely a verification badge.
+`edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps` and `MAX_BURN_RATE_BPS` now return `uint56`.
+Anything holding a hand-written ABI has to move with it: `packages/web/lib/contracts.ts` did, and `packages/web/test/abi-matches-artifact.test.ts` is what forces the issue.
+The width is not arbitrary and must not be "tidied" narrower - abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the admin console reads these through `at<bigint>`, which casts rather than infers, so a `uint32` would typecheck green and then throw `Cannot mix BigInt and other types` on first render.
 
 ## Traps that cost time
 

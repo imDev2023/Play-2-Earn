@@ -636,8 +636,9 @@ contract RushoodGame is Pausable {
         whenEconomicsGovernable
         whenBetInactive
     {
-        if (num == 0 || den == 0 || num > den) revert InvalidEconomics();
-        if (den > MAX_ECONOMIC_RATIO) revert InvalidEconomics();
+        if (num == 0 || den == 0 || num > den || den > MAX_ECONOMIC_RATIO) {
+            revert InvalidEconomics();
+        }
         edgeNum = uint56(num);
         edgeDen = uint56(den);
         emit EdgeUpdated(num, den);

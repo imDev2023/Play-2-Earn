@@ -82,8 +82,14 @@ describe("Storage packing holds", () => {
         .join(" ")}`,
     ).to.equal(1);
 
-    // And the whole economy really is 29 bytes: nothing spilled into a neighbour.
-    expect(expected >> 232n).to.equal(0n);
+    // And the block ends exactly at the slot boundary rather than spilling into the
+    // next one. `currentCommit` is declared immediately after `burnRateBps`, so it must
+    // sit in the very next slot; if any economic field had overflowed the word, the
+    // compiler would have pushed currentCommit one slot further along. Read off the
+    // chain and compared against the getter, so this can actually fail - asserting
+    // something about `expected`, which this test builds itself, could not.
+    const packedAt = slots.indexOf(expected);
+    expect(BigInt(await game.currentCommit())).to.equal(slots[packedAt + 1]);
   });
 
   it("computes maxBet at the extremes the setters now permit", async () => {

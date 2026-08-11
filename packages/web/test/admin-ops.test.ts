@@ -6,6 +6,7 @@ import {
   adminOp,
   describeAdminCall,
   encodeAdminOp,
+  MAX_ECONOMIC_RATIO,
   parseAdminOp,
   preflightAdminOp,
 } from "../lib/admin/ops";
@@ -85,6 +86,21 @@ describe("parseAdminOp", () => {
       (result as { errors: { message: string }[] }).errors[0].message,
       /1000 bps|10%/,
     );
+  });
+
+  it("rejects an edge or cap above MAX_ECONOMIC_RATIO rather than queueing a doomed call", () => {
+    // #47 packed edgeNum/edgeDen/solvencyCapDen into 56 bits each, so the contract now
+    // reverts with InvalidEconomics above type(uint56).max. Without this mirror the
+    // console would happily queue a timelock operation that can only revert on execution
+    // - the same failure mode the burn-rate bound above exists to prevent.
+    const tooBig = (MAX_ECONOMIC_RATIO + 1n).toString();
+
+    assert.deepEqual(errorsFor(parseAdminOp("setSolvencyCap", { den: tooBig })), ["den"]);
+    assert.deepEqual(errorsFor(parseAdminOp("setEdge", { num: "1", den: tooBig })), ["den"]);
+
+    // The ceiling itself is still accepted, so the bound rejects only what cannot fit.
+    const atCeiling = parseAdminOp("setSolvencyCap", { den: MAX_ECONOMIC_RATIO.toString() });
+    assert.deepEqual(ok(atCeiling).args, [MAX_ECONOMIC_RATIO]);
   });
 
   it("reads RUSH amounts as decimal token amounts, not raw wei", () => {
