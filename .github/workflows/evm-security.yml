@@ -1,0 +1,249 @@
+name: EVM security (Hardhat)
+
+# The Hardhat variant. Same intent as evm-security.yml: it FAILS rather than reports.
+#
+# The one structural difference is property testing. Hardhat has no native invariant
+# runner, so the properties run under Medusa instead of `forge test --invariant`. That is
+# a slower loop, which is why the Medusa job here is scheduled rather than per-commit, and
+# why the per-commit signal leans harder on Slither and Solhint.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+# Least privilege by default, matching ci.yml. Nothing here writes to the repo, so the
+# token should not be able to: the default grant is broad, and this workflow runs more
+# third-party code than any other in the repo - Slither, Medusa, pip and npm installs -
+# each of which inherits whatever the job is given.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: packages/contracts
+
+# Actions are pinned by commit SHA, never by tag; the reasoning is at the same point in
+# ci.yml. Each SHA below is the one its release tag already pointed at when this file was
+# written, so pinning changed no version. The trailing comment records which release each
+# SHA is, and is the thing to update when a pin is deliberately moved.
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+      # Deliberately the package script rather than the command inlined again. The two
+      # spellings drifted once - the script omitted `--max-warnings 0`, so it exited 0 on
+      # warnings that made this job exit 1, and the branch carried a red Lint job behind a
+      # green local check for a session. One copy cannot drift from itself.
+      - name: Solhint
+        run: npm run lint
+
+  build-test:
+    name: Compile and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+      - run: npx hardhat compile
+      - run: npx hardhat test
+
+  slither:
+    name: Slither
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+
+      - uses: crytic/slither-action@f197989dea5b53e986d0f88c60a034ddd77ec9a8 # v0.4.0
+        with:
+          slither-config: packages/contracts/slither.config.json
+          fail-on: medium
+          target: "packages/contracts"
+
+      - name: Record evidence
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path(".evm-standards.json")
+          cfg = json.loads(p.read_text()) if p.exists() else {}
+          cfg.setdefault("evidence", {})["slither"] = {
+              "clean": True, "summary": "no findings at medium or above"}
+          p.write_text(json.dumps(cfg, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          # `.evm-standards.json` is a dotfile, and upload-artifact v4 skips hidden files
+          # unless told otherwise. Combined with the default `if-no-files-found: warn`,
+          # the evidence jobs uploaded nothing and still went green, so the gate failed
+          # downstream for want of evidence that had in fact been produced. Erroring here
+          # is the point: a miss must not be survivable a second time.
+          include-hidden-files: true
+          if-no-files-found: error
+          name: evidence-slither
+          path: packages/contracts/.evm-standards.json
+
+  medusa:
+    name: Medusa property campaign
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci || npm install
+
+      # Restore the corpus so campaigns compound instead of starting cold.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: packages/contracts/medusa-corpus
+          key: medusa-corpus-${{ github.sha }}
+          restore-keys: medusa-corpus-
+
+      # Medusa shells out to crytic-compile to build the target, and crytic-compile is a
+      # Python package rather than part of the Medusa release archive. Installing only
+      # the binary got as far as "executable file not found in $PATH" and failed the job
+      # in 30 seconds. The Slither job does not need this because slither-action brings
+      # its own toolchain.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install crytic-compile
+        run: pip install crytic-compile
+
+      # Pinned by version and verified by checksum, for the same reason the actions above
+      # are pinned by SHA: `releases/latest/download` is a standing instruction to run
+      # whatever crytic publishes next, and this binary executes against the contracts.
+      # The checksum is the half that matters - a tag can be moved, a release asset can be
+      # replaced, and neither shows up as a diff here.
+      #
+      # v1.5.1 is the version every falsification result recorded in .evm-standards.json
+      # was produced with, which is the other argument for pinning: an upgrade that changes
+      # what the campaign explores should be a deliberate commit, re-running those plants,
+      # rather than something that arrives on an unrelated Tuesday.
+      - name: Install Medusa
+        env:
+          MEDUSA_VERSION: v1.5.1
+          MEDUSA_SHA256: ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3
+        run: |
+          set -euo pipefail
+          curl -sSL --fail -o medusa.tar.gz \
+            "https://github.com/crytic/medusa/releases/download/${MEDUSA_VERSION}/medusa-linux-x64.tar.gz"
+          echo "${MEDUSA_SHA256}  medusa.tar.gz" | sha256sum --check --strict
+          tar -xzf medusa.tar.gz && sudo mv medusa /usr/local/bin/
+          medusa --version
+
+      # Shorter on a pull request so the loop stays usable; full depth on schedule.
+      - name: Run Medusa
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            medusa fuzz --config medusa.json
+          else
+            medusa fuzz --config medusa.json --test-limit 20000
+          fi
+
+      - name: Record evidence
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path(".evm-standards.json")
+          cfg = json.loads(p.read_text()) if p.exists() else {}
+          cfg.setdefault("evidence", {})["medusa"] = {
+              "clean": True, "summary": "medusa property campaign passed"}
+          p.write_text(json.dumps(cfg, indent=2) + "\n")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          # `.evm-standards.json` is a dotfile, and upload-artifact v4 skips hidden files
+          # unless told otherwise. Combined with the default `if-no-files-found: warn`,
+          # the evidence jobs uploaded nothing and still went green, so the gate failed
+          # downstream for want of evidence that had in fact been produced. Erroring here
+          # is the point: a miss must not be survivable a second time.
+          include-hidden-files: true
+          if-no-files-found: error
+          name: evidence-medusa
+          path: packages/contracts/.evm-standards.json
+
+  gate:
+    name: Pre-deployment gate
+    runs-on: ubuntu-latest
+    needs: [slither, medusa]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+
+      # Must be the package directory, not the workspace root. `defaults.run` only
+      # applies to `run:` steps, so an action's `path:` resolves against the workspace -
+      # while the merge step below runs with its cwd already inside packages/contracts.
+      # Downloading to `evidence` put the artifacts somewhere the merge never looked, and
+      # the gate then failed `q-slither-clean` in CI for want of evidence CI had produced.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: evidence-*
+          path: packages/contracts/evidence
+
+      - name: Merge evidence
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          base = pathlib.Path(".evm-standards.json")
+          cfg = json.loads(base.read_text()) if base.exists() else {}
+          cfg.setdefault("evidence", {})
+          for f in pathlib.Path("evidence").rglob(".evm-standards.json"):
+              cfg["evidence"].update(json.loads(f.read_text()).get("evidence", {}))
+          base.write_text(json.dumps(cfg, indent=2) + "\n")
+          PY
+
+      # `--json` prints the report rather than writing it, so the file the upload wants
+      # has to be redirected into existence. Without this the upload had nothing to
+      # collect and the report was only ever readable in the log.
+      - name: Run gate
+        run: |
+          # First pass writes the artifact and must never fail the step, or a red gate
+          # would take its own report down with it. The second pass is the gate.
+          python3 lib/evm-security-standards/gate/check.py --project . --json > gate-report.json || true
+          python3 lib/evm-security-standards/gate/check.py --project .
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: gate-report
+          path: packages/contracts/gate-report.json

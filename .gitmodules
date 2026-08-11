@@ -1,0 +1,3 @@
+[submodule "packages/contracts/lib/evm-security-standards"]
+	path = packages/contracts/lib/evm-security-standards
+	url = https://github.com/imDev2023/evm-security-standards.git

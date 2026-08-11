@@ -23,6 +23,13 @@ contract Treasury {
     /// @notice The one game contract authorized to move funds. Zero until wired.
     address public game;
 
+    /// @notice Emitted when the authorized game is wired, which happens exactly once.
+    /// @dev The only privileged action this contract has, and it hands an address the
+    ///      power to move and burn every token held here. It emitted nothing until the
+    ///      security gate asked for events on privileged actions, which meant the single
+    ///      most consequential call in the deployment left no trace to monitor or audit.
+    event GameSet(address indexed game);
+
     /// @notice Thrown when the constructor is given the zero address as token.
     error TokenIsZeroAddress();
     /// @notice Thrown when wiring the zero address as the game.
@@ -48,6 +55,7 @@ contract Treasury {
         if (game != address(0)) revert GameAlreadySet();
         if (game_ == address(0)) revert GameIsZeroAddress();
         game = game_;
+        emit GameSet(game_);
     }
 
     /// @notice Release RUSH (a winning payout or a refunded stake). Callable only

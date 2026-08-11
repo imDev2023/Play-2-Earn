@@ -67,7 +67,44 @@ describe("Walking skeleton - Treasury + RushoodGame", () => {
     };
   }
 
+  /**
+   * A Treasury with no game wired yet, for the cases that have to observe setGame
+   * itself rather than its result. `deploy()` above has already called it.
+   */
+  async function deployUnwiredTreasury() {
+    const [deployer, other] = await ethers.getSigners();
+    const Rushood = await ethers.getContractFactory("Rushood");
+    const rush = await Rushood.deploy(deployer.address);
+    const Treasury = await ethers.getContractFactory("Treasury");
+    const treasury = await Treasury.deploy(await rush.getAddress());
+    return { treasury, deployer, other };
+  }
+
   describe("Treasury authorization", () => {
+    it("announces the wiring, and indexes the game so it can be filtered on", async () => {
+      const { treasury, deployer, other } = await deployUnwiredTreasury();
+
+      await expect(treasury.setGame(other.address))
+        .to.emit(treasury, "GameSet")
+        .withArgs(other.address);
+
+      // The address is `indexed`, which is what makes the wiring findable by a client
+      // that knows only the game. Asserting the argument alone would still pass if the
+      // keyword were dropped, so filter on it: a non-indexed address lands in `data` and
+      // matches nothing here. This is the #53 lesson - an ABI check that ignores
+      // `indexed` is not checking the half that consumers depend on.
+      const wired = await treasury.queryFilter(treasury.filters.GameSet(other.address));
+      expect(wired.length).to.equal(1);
+      expect(await treasury.game()).to.equal(other.address);
+
+      // And nothing is announced on the rejected second call.
+      await expect(treasury.setGame(deployer.address)).to.be.revertedWithCustomError(
+        treasury,
+        "GameAlreadySet",
+      );
+      expect((await treasury.queryFilter(treasury.filters.GameSet())).length).to.equal(1);
+    });
+
     it("wires the game exactly once", async () => {
       const { treasury, game, deployer } = await deploy();
       expect(await treasury.game()).to.equal(await game.getAddress());
@@ -85,14 +122,11 @@ describe("Walking skeleton - Treasury + RushoodGame", () => {
     });
 
     it("rejects setGame from a non-deployer", async () => {
-      const Rushood = await ethers.getContractFactory("Rushood");
-      const [deployer, other] = await ethers.getSigners();
-      const rush = await Rushood.deploy(deployer.address);
-      const Treasury = await ethers.getContractFactory("Treasury");
-      const treasury = await Treasury.deploy(await rush.getAddress());
-      await expect(
-        treasury.connect(other).setGame(other.address),
-      ).to.be.revertedWithCustomError(treasury, "NotDeployer");
+      const { treasury, other } = await deployUnwiredTreasury();
+      await expect(treasury.connect(other).setGame(other.address)).to.be.revertedWithCustomError(
+        treasury,
+        "NotDeployer",
+      );
     });
   });
 

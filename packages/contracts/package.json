@@ -7,7 +7,7 @@
     "build": "hardhat compile",
     "test": "hardhat test",
     "typecheck": "hardhat compile && tsc --noEmit",
-    "lint": "solhint 'contracts/**/*.sol'",
+    "lint": "solhint --config .solhint.json --max-warnings 0 'contracts/**/*.sol'",
     "node": "hardhat node",
     "deploy:skeleton": "hardhat run scripts/deploy-skeleton.ts --network localhost",
     "deploy:launch": "hardhat run scripts/deploy-launch.ts --network localhost",
