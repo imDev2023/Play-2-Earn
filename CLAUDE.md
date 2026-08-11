@@ -18,7 +18,7 @@ It deliberately does not restate what the linked files already say.
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
 | `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06. **On `chore/wire-security-gate` only - #54 is open, not merged.** The repo is public so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts now import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
 | `resources/01-robinhood-chain.md` | Untracked. Crawled platform facts for chain 4663: Arbitrum Nitro L2, ArbOS semantics, ERC-8056, the 48-hour feed gap, and the confirmation that **there is no L2 sequencer uptime feed on 4663** - which closes one of the profile's two `OPEN:` answers. |
-| `resources/web3-security.md` | Untracked; moved here from the repo root. Four links, all checked. Only one still bears on code the package does not cover: Consensys "Timestamp Dependence", the 15-second rule. Our refund window is 3600s, so chain time is safe there. |
+| `resources/web3-security.md` | Untracked. All four links checked and nothing actionable is left: the only one the package does not cover is the 15-second timestamp rule, and the 3600s refund window clears it. |
 
 ## Deployment reality
 
@@ -29,8 +29,9 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
-**That debt is now owed.** #48 repacked `RushoodGame`'s storage, so the deployed 46630 bytecode no longer matches the tree and the redeploy is outstanding.
-Do it once, and pay the manual Blockscout verify once, rather than per `.sol` change.
+**That debt is now owed three times over**, which is the argument for paying it once rather than per change: #48 repacked `RushoodGame`'s storage, and #54 moves `evmVersion` to `cancun` and adds `Treasury.GameSet`.
+The deployed 46630 bytecode no longer matches the tree on any of the three counts.
+Do it once, and pay the manual Blockscout verify once.
 
 ## Traps that cost time
 
@@ -84,8 +85,10 @@ Both `toBetView` revisions above were written that way.
 Size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
 
 **A PR body claiming a green suite is not evidence.**
-`gh pr checks <n>` is.
+`gh pr checks <n>` is, and only for the commit the remote actually has - a branch ahead of its remote makes even that stale, which is the sharper form of the same trap.
 PR #48 sat red for a day behind a body that said "typecheck clean".
+A tool reporting `pass` is not evidence either: CodeRabbit shows `pass` with the note "Review rate limited", which means it never ran.
+Read the note, not the column.
 
 **Chain 4663 has no randomness, and that is why this game is shaped as it is.**
 `packages/contracts/lib/evm-security-standards/profiles/robinhood-4663.md` is the authority; read it before answering any chain question, never from general knowledge.
@@ -93,9 +96,10 @@ It confirms `prevrandao` is a constant and there is no VRF on the production pat
 The profile's headline hazard, the ERC-8056 multiplier, **does not apply here** (no contract reads a price) and is waived in `.evm-standards.json` with the reasoning.
 One answer in that profile is still `OPEN:` - re-org depth. Do not invent it. The other, the sequencer uptime feed, is now closed: **there is no such feed on 4663 at all**, so the guard the Robinhood docs recommend cannot be built. See `resources/01-robinhood-chain.md`.
 
-**The security gate is wired on #54, which is open and reviewed-with-findings, not merged.** 37 pass, 0 fail, 10 unanswered in CI.
+**The security gate is wired on #54, which is pushed and fully green but still open, awaiting the owner's merge.** 37 pass, 0 fail, 10 unanswered in CI.
 `python3 lib/evm-security-standards/gate/check.py --project .` from `packages/contracts`.
 Locally it reports 35 pass and 2 failures, and that is correct rather than broken: `q-slither-clean` and `v-invariants-in-ci-hardhat` read evidence that only CI produces, merged into `.evm-standards.json` by the gate job.
+Two review rounds ran over the fix commits themselves and both found real defects, which is the cadence earning its keep rather than a formality.
 
 **The 10 unanswered items are load-bearing, not leftovers.**
 `check.py` passes an attested item on **any non-empty string**, so writing "no, because ..." into `attestations` silently turns a negative into a pass.
@@ -104,9 +108,14 @@ Never "answer" one to tidy the report.
 
 **`evmVersion` is `cancun`, chosen by probing the chain rather than from the parent family.**
 Both 4663 and 46630 report ArbOS 61 and accept BASEFEE, PUSH0, MCOPY, TSTORE and TLOAD; they reject **BLOBBASEFEE** by name, and BLOBHASH with it.
-That is safe only because solc emits those two solely when the source asks for them, so `test/EvmTarget.ts` guards it. Hardhat's default here was `paris`, which is not solc 0.8.24's own default.
+That is safe only because solc emits those two solely when something asks for them, so `test/EvmTarget.ts` guards it.
+Hardhat's default here was `paris`, which is not solc 0.8.24's own default.
+That guard reads **solc's build-info**, not the `contracts/` directory, and the reason is worth keeping: a directory scan is only as wide as the path it was given and only as literal as the syntax its author imagined.
+The first version missed the Yul spelling `blobbasefee()` and never looked at the submodule templates that `RushoodProperties` compiles.
+Two tests, because they cover different regions: the runtime scan reads solc's own disassembly, and a separate source scan covers constructors, whose creation bytecode embeds other contracts' runtime and cannot be disassembled to a reliable end.
+Read each unit through its own artifact's `.dbg.json`; build-info files are left behind by earlier compiles and reading them whole reports code that no longer exists.
 
-**Slither did *not* pass by hand before #54.** It exited non-zero at `fail_on: medium` on a `locked-ether` finding in `MockNonfungiblePositionManager`. Mocks and the properties harness are now filtered like `test/` and `script/`.
+**Slither's config filters mocks and the properties harness** like `test/` and `script/`, added in #54 after a `locked-ether` finding in `MockNonfungiblePositionManager` failed it at `fail_on: medium`.
 
 **A green CI step is not proof the step did anything.**
 Three of the gate's five defects were steps that succeeded while achieving nothing, and each cost a full CI round trip to find.
@@ -137,10 +146,15 @@ Nothing counter-checks this: `slither.config.json` sets `exclude_dependencies: t
 Three more attestations were stale in the same direction, each because the PR's own new files changed a count the attestation had stated as absolute.
 When an attestation says "there are exactly N" or "none exist", re-grep it after every commit in the same PR.
 
-**Actions are pinned by SHA, and a new workflow will forget.**
+**Everything a workflow fetches is pinned, and a new workflow will forget.**
 The rule is stated in a comment at `.github/workflows/ci.yml:18`.
-`evm-security.yml` shipped with all 17 of its `uses:` tag-pinned, and `ci.yml`'s own `connected-e2e` job (from #49) had three more; both were fixed on the branch, so every `uses:` in the repo is now a 40-hex SHA with the release in a trailing comment.
+`evm-security.yml` shipped with all 17 of its `uses:` tag-pinned, and `ci.yml`'s own `connected-e2e` job (from #49) had three more; every `uses:` in the repo is now a 40-hex SHA with the release in a trailing comment.
 Resolve the tag **already in use** to its SHA rather than taking whatever the action's latest release is: at the time of writing, the six `actions/*` in use were two to four majors behind, and pinning is not the moment to take a major bump.
+**The rule does not stop at `uses:`.**
+The commit that pinned all 17 left `curl .../releases/latest/download/medusa-linux-x64.tar.gz` untouched two steps below its own comment condemning exactly that, on a binary that then executes against the contracts.
+Now `v1.5.1` plus a SHA256 check, and the checksum is the half that matters: a tag can be moved and a release asset replaced, and neither shows up as a diff.
+Pin to the version the recorded evidence was produced with, so an upgrade that changes what a campaign explores has to be a deliberate commit that re-runs the plants.
+Least privilege travels with it: `evm-security.yml` ran with the default token grant while running more third-party code than any other workflow here, until it got `permissions: contents: read` to match `ci.yml`.
 
 **`npm run lint` and CI's lint step must stay the same command.**
 They did not, and the divergence hid a red CI job behind a green local one for a full session: the script omitted `--max-warnings 0`, so it exited 0 on the three solhint warnings that made CI's Lint step exit 1.
