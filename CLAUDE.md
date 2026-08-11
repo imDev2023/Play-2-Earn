@@ -16,9 +16,9 @@ It deliberately does not restate what the linked files already say.
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, installed 2026-08-06. **On `chore/wire-security-gate` only - #54 is open, not merged.** The repo is public so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts now import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, on `main` since #54 merged (2026-08-11). Public, so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
 | `resources/01-robinhood-chain.md` | Untracked. Crawled platform facts for chain 4663: Arbitrum Nitro L2, ArbOS semantics, ERC-8056, the 48-hour feed gap, and the confirmation that **there is no L2 sequencer uptime feed on 4663** - which closes one of the profile's two `OPEN:` answers. |
-| `resources/web3-security.md` | Untracked. All four links checked and nothing actionable is left: the only one the package does not cover is the 15-second timestamp rule, and the 3600s refund window clears it. |
+| `resources/web3-security.md` | Untracked, and now spent: all four links checked, nothing actionable left. |
 
 ## Deployment reality
 
@@ -29,9 +29,20 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
-**That debt is now owed three times over**, which is the argument for paying it once rather than per change: #48 repacked `RushoodGame`'s storage, and #54 moves `evmVersion` to `cancun` and adds `Treasury.GameSet`.
-The deployed 46630 bytecode no longer matches the tree on any of the three counts.
-Do it once, and pay the manual Blockscout verify once.
+**That debt is owed four times over**, which is the argument for paying it once rather than per change.
+Four *changes* from three PRs - count changes, not PR numbers: PR #48 repacked `RushoodGame`'s storage; PR #54 moved `evmVersion` to `cancun` **and** added `Treasury.GameSet` (that is two); PR #55 packed the five economic parameters into one slot (issue #47 - the issue number is not the PR number, and an earlier draft of this paragraph conflated them).
+The deployed 46630 bytecode matches the tree on none of the four.
+
+**Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
+PR #48 was first and is still the sharpest: it reordered the `bets()` tuple, which is the *silent* kind of break (see the positional-decode trap below). #54's event is additive. #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
+
+Two things that paragraph got wrong before it got right, both worth keeping:
+**Count the constants, not just the variables** - `public constant` emits a getter too, so the four `DEFAULT_*` seeds narrowed alongside the five variables, and the first draft missed all four.
+And it credited `abi-matches-artifact.test.ts` with catching that, which it could not: those four were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**. All ten are declared now.
+
+**The `uint56` width is load-bearing and must not be "tidied" narrower.**
+abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the admin console reads these through `at<bigint>`, which **casts rather than infers**.
+A `uint32` would therefore typecheck green and throw `Cannot mix BigInt and other types` on first render.
 
 ## Traps that cost time
 
@@ -83,6 +94,7 @@ The cadence is in `AGENTS.md` (on `main` since #52) and is not restated here; wh
 A fix closing a finding feels like the end of a review rather than the start of one, and it is written under the impression that the problem is already understood - the exact state in which a fix reproduces the bug it was meant to remove.
 Both `toBetView` revisions above were written that way.
 Size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
+**#55 ran four rounds and every one found something real**, including two factual errors written into *this file* by the round before it. Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
 
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is, and only for the commit the remote actually has - a branch ahead of its remote makes even that stale, which is the sharper form of the same trap.
@@ -96,10 +108,9 @@ It confirms `prevrandao` is a constant and there is no VRF on the production pat
 The profile's headline hazard, the ERC-8056 multiplier, **does not apply here** (no contract reads a price) and is waived in `.evm-standards.json` with the reasoning.
 One answer in that profile is still `OPEN:` - re-org depth. Do not invent it. The other, the sequencer uptime feed, is now closed: **there is no such feed on 4663 at all**, so the guard the Robinhood docs recommend cannot be built. See `resources/01-robinhood-chain.md`.
 
-**The security gate is wired on #54, which is pushed and fully green but still open, awaiting the owner's merge.** 37 pass, 0 fail, 10 unanswered in CI.
+**The security gate is wired and on `main`** (#54, merged 2026-08-11). 37 pass, 0 fail, 10 unanswered in CI.
 `python3 lib/evm-security-standards/gate/check.py --project .` from `packages/contracts`.
-Locally it reports 35 pass and 2 failures, and that is correct rather than broken: `q-slither-clean` and `v-invariants-in-ci-hardhat` read evidence that only CI produces, merged into `.evm-standards.json` by the gate job.
-Two review rounds ran over the fix commits themselves and both found real defects, which is the cadence earning its keep rather than a formality.
+**Locally it reports 35 pass and 2 failures, and that is correct rather than broken**: `q-slither-clean` and `v-invariants-in-ci-hardhat` read evidence only CI produces, merged into `.evm-standards.json` by the gate job. Do not "fix" those two locally.
 
 **The 10 unanswered items are load-bearing, not leftovers.**
 `check.py` passes an attested item on **any non-empty string**, so writing "no, because ..." into `attestations` silently turns a negative into a pass.
@@ -117,28 +128,39 @@ Read each unit through its own artifact's `.dbg.json`; build-info files are left
 
 **Slither's config filters mocks and the properties harness** like `test/` and `script/`, added in #54 after a `locked-ether` finding in `MockNonfungiblePositionManager` failed it at `fail_on: medium`.
 
+**Solidity fills storage slots greedily, so a packed block placed after an address silently straddles two of them.**
+PR #55 packed five economic parameters into 29 bytes and got *two* slots, not one: `guardian` is an `address` with 12 spare bytes, and the first two fields of the block moved in to fill them.
+The gas claim was then simply false, and nothing about the source looked wrong.
+`minBet`/`treasuryFloor` (full-width `uint256`s) now sit ahead of the block to force a fresh boundary.
+**Prove a layout claim by reading the raw slot off the chain** - `test/StoragePacking.ts` does, and caught this on its first run; reading the declaration back out of the `.sol` file only restates the thing under test.
+Note `storageLayout` is not in this project's solc `outputSelection`, so `eth_getStorage` is the available route.
+
+**Narrowing a storage type silently narrows every setter that writes it.**
+`setEdge` and `setSolvencyCap` took an unbounded `den`; after packing, an over-wide value would have *truncated*, and for the solvency cap truncation runs in the dangerous direction - a deliberately tight cap wrapping into a loose one.
+Bound the setter in the same commit, and keep the bound a consequence of the layout (`MAX_ECONOMIC_RATIO` is `type(uint56).max`) rather than smuggling an economic policy change into a storage PR.
+Watch the arithmetic too: `uint56 * uint56` is evaluated **in** `uint56`, so `maxBet` needed an explicit `uint256(...)` widening or a governance-settable value would overflow and brick every `placeBet`.
+
 **A green CI step is not proof the step did anything.**
 Three of the gate's five defects were steps that succeeded while achieving nothing, and each cost a full CI round trip to find.
 `upload-artifact@v4` skips **hidden files** by default, so uploading `.evm-standards.json` produced no artifact and warned rather than failed - the gate then failed downstream for want of evidence CI had just recorded. Pair `include-hidden-files: true` with `if-no-files-found: error`; the second half is the one that matters.
 `defaults.run.working-directory` does **not** apply to an action's `path:`, so a download and the `run` step consuming it can silently disagree about where they are.
 And a release archive is not its toolchain: Medusa shells out to `crytic-compile`, a separate Python package.
+**Medusa itself can report a green campaign against a stale compilation.** A planted cap-check deletion once returned `14/0` while the plant was provably live (`OddsTiers.ts` was red on the same tree); three repeats on identical source all returned `13/1`, and the run that disagreed did not print crytic-compile's `Finished compiling targets` line. Not fully isolated - so grep the campaign output for that line before believing a pass.
 
 **A bounded fuzz handler decides which states the campaign can reach.**
 The solvency property could not find a deliberately planted break, because the handler burned a uniformly random slice of the treasury and the violating region was the last ~1% of that range.
 Put the extremes in as their own zero-argument calls rather than trusting the sampler to land on them. `handleBurnAllProfit` in `contracts/properties/RushoodProperties.sol` is that fix.
 Corollary, and the rule that governs this whole area: **prove the check fails on a planted bug before believing it passes** - the run that "passed" first was measuring nothing.
 
-It then bit a second time, in the property written to answer the first review, and the shape is worth keeping because it is subtler.
-`handlePlaceBet` folds its stake into `[minBet, maxBet]` so the campaign spends its budget on play, which also means **no sequence it can generate ever breaches the cap** - so `invariant_payoutWithinCap`'s "the win stays inside maxPayout" assertion stayed green with the `stake > maxBet(tier)` check deleted from `placeBet` outright.
-A folded input is a silent restriction on the reachable state space, and the assertion about the state you folded away is the one that cannot fail.
-`handlePlaceOverCapBet` is that fix.
-The same assertion was also measured against a live `maxPayout()` re-read at assertion time, which the stake had by then inflated; it is snapshotted at placement now, because the contract caps against the pool the bet *joined*.
+It bit a second time, subtler: `handlePlaceBet` folds its stake into `[minBet, maxBet]`, so **no sequence the campaign can generate ever breaches the cap** and `invariant_payoutWithinCap` stayed green with the `stake > maxBet(tier)` check deleted from `placeBet` outright.
+A folded input silently restricts the reachable state space, and the assertion about the state you folded away is the one that cannot fail. `handlePlaceOverCapBet` is that fix, plus an at-placement `maxPayout` snapshot (a live re-read is inflated by the stake being tested).
 
 **A check that recomputes the implementation and then compares that recomputation to itself passes for every input.**
 The #54 review found the pure form of it. `test/RoundingDirection.ts` computed `const burned = (stake * bps) / den` in TypeScript and asserted `burned * den <= stake * bps` - an identity of integer division, true whatever the contract does, and it never called the contract at all.
 It reads exactly like a real test, and a waiver pointed at it as the evidence for `arith-rounding-tested`.
 Anchor an assertion to the **spec's numbers**, and read the actual value **back off the chain**. Both halves matter: the rewrite settles real bets and reads the `StakeBurned` amount plus the `totalSupply` delta.
 The same defect in property form is subtler: `_activeLiability` derived its expectation from `game.payoutFor`, so a wrong multiplier would inflate expectation and payout **together** and conservation would keep holding while every winner was paid the wrong number. `invariant_payoutWithinCap` is the fix and is the only property that catches that class.
+It recurs, so expect it: #55's own `StoragePacking.ts` shipped `expect(expected >> 232n).to.equal(0n)`, where `expected` is a word the test builds with a top shift of exactly 232 - zero for every input, in the file written to prove a layout claim. Review caught it. **If both sides of an assertion come from the test, it asserts nothing.**
 
 **An attestation is only as good as the reading behind it, and reading a file is not reading a contract.**
 `cf-no-unbounded-loops` claimed six named contracts contain no loop. True of the six *files*; false of `RushoodTimelock`, which inherits OZ `TimelockController` and its caller-supplied array loops.

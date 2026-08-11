@@ -154,28 +154,28 @@ export const GAME_ABI = [
     name: "burnRateBps",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ type: "uint256" }],
+    outputs: [{ type: "uint56" }],
   },
   {
     type: "function",
     name: "edgeNum",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ type: "uint256" }],
+    outputs: [{ type: "uint56" }],
   },
   {
     type: "function",
     name: "edgeDen",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ type: "uint256" }],
+    outputs: [{ type: "uint56" }],
   },
   {
     type: "function",
     name: "solvencyCapDen",
     stateMutability: "view",
     inputs: [],
-    outputs: [{ type: "uint256" }],
+    outputs: [{ type: "uint56" }],
   },
   {
     type: "function",
@@ -194,6 +194,46 @@ export const GAME_ABI = [
   {
     type: "function",
     name: "MAX_BURN_RATE_BPS",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint56" }],
+  },
+  // The seed constants and the packing ceiling. Nothing in the app reads these yet; they
+  // are declared so `abi-matches-artifact.test.ts` covers the whole economic surface
+  // rather than the half the console happens to call. #47 narrowed the four DEFAULT_*
+  // getters along with the effective values, and the guard did not notice because a
+  // getter absent from this file is a getter the guard cannot check.
+  {
+    type: "function",
+    name: "DEFAULT_EDGE_NUM",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint56" }],
+  },
+  {
+    type: "function",
+    name: "DEFAULT_EDGE_DEN",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint56" }],
+  },
+  {
+    type: "function",
+    name: "DEFAULT_SOLVENCY_CAP_DEN",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint56" }],
+  },
+  {
+    type: "function",
+    name: "DEFAULT_BURN_RATE_BPS",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint56" }],
+  },
+  {
+    type: "function",
+    name: "MAX_ECONOMIC_RATIO",
     stateMutability: "view",
     inputs: [],
     outputs: [{ type: "uint256" }],

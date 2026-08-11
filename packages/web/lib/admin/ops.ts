@@ -48,6 +48,18 @@ export type AdminOpId =
  */
 export const DEFAULT_MAX_BURN_RATE_BPS = 1_000n;
 
+/**
+ * `RushoodGame.MAX_ECONOMIC_RATIO` - the largest value `edgeNum`, `edgeDen` and
+ * `solvencyCapDen` can hold now that #47 packed them into one `uint56` slot. Above it
+ * `setEdge` and `setSolvencyCap` revert with `InvalidEconomics`.
+ *
+ * Mirrored as a constant rather than read live, unlike `MAX_BURN_RATE_BPS`: that one is a
+ * policy ceiling a redeploy could plausibly retune, whereas this is the width of the
+ * storage field itself. It cannot change without a redeploy that also changes the ABI,
+ * and `abi-matches-artifact.test.ts` would fail first if it did.
+ */
+export const MAX_ECONOMIC_RATIO = 72_057_594_037_927_935n; // type(uint56).max
+
 export interface AdminOpField {
   /** Matches the contract's parameter name, so the form and the ABI agree. */
   name: string;
@@ -60,6 +72,15 @@ export interface AdminOpField {
   kind: "integer" | "rush" | "boolean";
   /** Inclusive lower bound, in the field's on-chain units. */
   min?: bigint;
+  /** Inclusive upper bound, in the field's on-chain units. */
+  max?: bigint;
+  /**
+   * Why the upper bound exists, appended to the error so the operator learns the reason
+   * rather than just the number. Carried per field rather than baked into the validator:
+   * the bounds have different causes - a storage width here, a policy ceiling elsewhere -
+   * and a shared message would state the wrong one for the next field that grows a `max`.
+   */
+  maxReason?: string;
   placeholder?: string;
   hint?: string;
 }
@@ -195,10 +216,20 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
         label: "Numerator",
         kind: "integer",
         min: 1n,
+        max: MAX_ECONOMIC_RATIO,
+        maxReason: "the game packs it into 56 bits and reverts above that",
         placeholder: "95",
         hint: "95/100 is the flat 5% edge every tier ships with.",
       },
-      { name: "den", label: "Denominator", kind: "integer", min: 1n, placeholder: "100" },
+      {
+        name: "den",
+        label: "Denominator",
+        kind: "integer",
+        min: 1n,
+        max: MAX_ECONOMIC_RATIO,
+        maxReason: "the game packs it into 56 bits and reverts above that",
+        placeholder: "100",
+      },
     ],
     needsEconomicsUnlocked: true,
     needsIdleGame: true,
@@ -227,6 +258,8 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
         label: "Cap denominator",
         kind: "integer",
         min: 1n,
+        max: MAX_ECONOMIC_RATIO,
+        maxReason: "the game packs it into 56 bits and reverts above that",
         placeholder: "100",
         hint: "100 = the 1% cap that makes the house solvent by construction.",
       },
@@ -376,6 +409,15 @@ function withinBound(
         field.kind === "rush"
           ? `${field.label} must be greater than zero - the game rejects it otherwise`
           : `${field.label} must be at least ${field.min}`,
+    });
+    return undefined;
+  }
+  if (field.max !== undefined && value > field.max) {
+    errors.push({
+      field: field.name,
+      message:
+        `${field.label} must be at most ${field.max}` +
+        (field.maxReason ? ` - ${field.maxReason}` : ""),
     });
     return undefined;
   }
