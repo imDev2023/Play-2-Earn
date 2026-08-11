@@ -298,9 +298,12 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///         only in company with `handlePlaceOverCapBet` - and the claim was false
     ///         before that handler existed, which is the whole reason it does. Verified
     ///         by planting that deletion: with the handler the campaign fails, without it
-    ///         the campaign was green. Against the live `maxPayout()` rather than the
-    ///         snapshot it is unfalsifiable either way, because the stake has by then
-    ///         joined the pool it is being measured against.
+    ///         the campaign was green. The snapshot is a separate and narrower fix, and
+    ///         not what catches that plant - a stake of twice the cap overshoots by so
+    ///         much that even the inflated live figure is exceeded. What the snapshot
+    ///         catches is a marginal breach: at `maxBet + 1` the stake lifts a live
+    ///         `maxPayout()` by roughly `maxBet / 100`, which dwarfs the overage and
+    ///         swallows it. Both are needed, for different sizes of the same bug.
     ///      3. `maxPayout` stays within the spec's 1%. This catches a governance action
     ///         that loosens `solvencyCapDen`, which the setter currently permits down to
     ///         1 - a single win draining the pool. Unreachable from this campaign today

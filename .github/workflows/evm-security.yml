@@ -36,8 +36,12 @@ jobs:
           node-version: "20"
           cache: npm
       - run: npm ci || npm install
+      # Deliberately the package script rather than the command inlined again. The two
+      # spellings drifted once - the script omitted `--max-warnings 0`, so it exited 0 on
+      # warnings that made this job exit 1, and the branch carried a red Lint job behind a
+      # green local check for a session. One copy cannot drift from itself.
       - name: Solhint
-        run: npx solhint --config .solhint.json --max-warnings 0 'contracts/**/*.sol'
+        run: npm run lint
 
   build-test:
     name: Compile and test

@@ -144,7 +144,9 @@ Resolve the tag **already in use** to its SHA rather than taking whatever the ac
 
 **`npm run lint` and CI's lint step must stay the same command.**
 They did not, and the divergence hid a red CI job behind a green local one for a full session: the script omitted `--max-warnings 0`, so it exited 0 on the three solhint warnings that made CI's Lint step exit 1.
-The script now carries both flags. This is the local-command form of "a PR body claiming a green suite is not evidence" - if the command you run to check is not the command the gate runs, it is not a check.
+The fix is one copy, not two matching ones: `evm-security.yml`'s Solhint step now runs `npm run lint` rather than spelling the command out again.
+This is the local-command form of "a PR body claiming a green suite is not evidence" - if the command you run to check is not the command the gate runs, it is not a check.
+Note that `ci.yml`'s own Lint step is the root `npm run lint`, which fans out to every workspace, so tightening the contracts script tightened that job too.
 
 **Check for path collisions before adding a file while another PR is in review** with `git diff main...<other-branch> --stat`. An ABI-order pin once landed at exactly the path #48 was already creating.
 
