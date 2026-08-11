@@ -29,17 +29,25 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
-**That debt is now owed four times over**, which is the argument for paying it once rather than per change: #48 repacked `RushoodGame`'s storage, #54 moved `evmVersion` to `cancun` and added `Treasury.GameSet`, and #47 packed the five economic parameters into one slot.
+**That debt is now owed four times over**, which is the argument for paying it once rather than per change.
+Four *changes*, from three PRs - count the changes, not the PR numbers:
+
+- PR #48 repacked `RushoodGame`'s storage.
+- PR #54 moved `evmVersion` to `cancun`, and separately added `Treasury.GameSet`. That is two.
+- PR #47 packed the five economic parameters into one slot.
+
 The deployed 46630 bytecode no longer matches the tree on any of the four counts.
 Do it once, and pay the manual Blockscout verify once.
 
-**Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
-#48 was the first and is still the sharpest: it reordered the `bets()` tuple and narrowed `placedAt` to `uint64` and `betCounter`/`activeBetId` to `uint128`, and a reordered output tuple is the silent kind (see the positional-decode trap below).
-#54 added `Treasury.GameSet`, which is additive.
-#47 narrowed **nine** getters to `uint56` and added a tenth: the five effective values and bounds (`edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps`, `MAX_BURN_RATE_BPS`) plus the four seed constants (`DEFAULT_EDGE_NUM`, `DEFAULT_EDGE_DEN`, `DEFAULT_SOLVENCY_CAP_DEN`, `DEFAULT_BURN_RATE_BPS`), with `MAX_ECONOMIC_RATIO` new and additive.
-Count the constants, not just the variables - `public constant` emits a getter too, and the first draft of this paragraph missed all four.
-`packages/web/lib/contracts.ts` moved with the five it declares, and `packages/web/test/abi-matches-artifact.test.ts` forces that.
-**It does not cover the other four**: the `DEFAULT_*` getters are absent from `GAME_ABI`, so the guard is only as wide as the ABI someone chose to write down, and an outside consumer reading them breaks with nothing in this repo noticing.
+**Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge:
+
+- PR #48 was the first and is still the sharpest. It reordered the `bets()` tuple and narrowed `placedAt` to `uint64` and `betCounter`/`activeBetId` to `uint128`, and a reordered output tuple is the silent kind (see the positional-decode trap below).
+- PR #54 added `Treasury.GameSet`, which is additive.
+- PR #47 narrowed **nine** getters to `uint56` and added a tenth: the five effective values and bounds (`edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps`, `MAX_BURN_RATE_BPS`) plus the four seed constants (`DEFAULT_EDGE_NUM`, `DEFAULT_EDGE_DEN`, `DEFAULT_SOLVENCY_CAP_DEN`, `DEFAULT_BURN_RATE_BPS`), with `MAX_ECONOMIC_RATIO` new and additive.
+
+Count the constants, not just the variables - `public constant` emits a getter too, and the first draft of this paragraph missed all four of them.
+It also credited `packages/web/test/abi-matches-artifact.test.ts` with catching the drift, which it could not: the four `DEFAULT_*` getters were absent from `GAME_ABI`, and **the guard is only ever as wide as the ABI someone chose to write down**.
+All ten are declared now, so the guard covers the whole economic surface rather than the half the console happens to call.
 The width is not arbitrary and must not be "tidied" narrower - abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the admin console reads these through `at<bigint>`, which casts rather than infers, so a `uint32` would typecheck green and then throw `Cannot mix BigInt and other types` on first render.
 
 ## Traps that cost time
