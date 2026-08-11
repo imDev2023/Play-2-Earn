@@ -15,6 +15,13 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
 
+# Least privilege by default, matching ci.yml. Nothing here writes to the repo, so the
+# token should not be able to: the default grant is broad, and this workflow runs more
+# third-party code than any other in the repo - Slither, Medusa, pip and npm installs -
+# each of which inherits whatever the job is given.
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: packages/contracts
@@ -134,11 +141,27 @@ jobs:
       - name: Install crytic-compile
         run: pip install crytic-compile
 
+      # Pinned by version and verified by checksum, for the same reason the actions above
+      # are pinned by SHA: `releases/latest/download` is a standing instruction to run
+      # whatever crytic publishes next, and this binary executes against the contracts.
+      # The checksum is the half that matters - a tag can be moved, a release asset can be
+      # replaced, and neither shows up as a diff here.
+      #
+      # v1.5.1 is the version every falsification result recorded in .evm-standards.json
+      # was produced with, which is the other argument for pinning: an upgrade that changes
+      # what the campaign explores should be a deliberate commit, re-running those plants,
+      # rather than something that arrives on an unrelated Tuesday.
       - name: Install Medusa
+        env:
+          MEDUSA_VERSION: v1.5.1
+          MEDUSA_SHA256: ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3
         run: |
-          curl -sSL -o medusa.tar.gz \
-            https://github.com/crytic/medusa/releases/latest/download/medusa-linux-x64.tar.gz
+          set -euo pipefail
+          curl -sSL --fail -o medusa.tar.gz \
+            "https://github.com/crytic/medusa/releases/download/${MEDUSA_VERSION}/medusa-linux-x64.tar.gz"
+          echo "${MEDUSA_SHA256}  medusa.tar.gz" | sha256sum --check --strict
           tar -xzf medusa.tar.gz && sudo mv medusa /usr/local/bin/
+          medusa --version
 
       # Shorter on a pull request so the loop stays usable; full depth on schedule.
       - name: Run Medusa
