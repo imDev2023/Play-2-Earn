@@ -74,6 +74,13 @@ export interface AdminOpField {
   min?: bigint;
   /** Inclusive upper bound, in the field's on-chain units. */
   max?: bigint;
+  /**
+   * Why the upper bound exists, appended to the error so the operator learns the reason
+   * rather than just the number. Carried per field rather than baked into the validator:
+   * the bounds have different causes - a storage width here, a policy ceiling elsewhere -
+   * and a shared message would state the wrong one for the next field that grows a `max`.
+   */
+  maxReason?: string;
   placeholder?: string;
   hint?: string;
 }
@@ -210,6 +217,7 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
         kind: "integer",
         min: 1n,
         max: MAX_ECONOMIC_RATIO,
+        maxReason: "the game packs it into 56 bits and reverts above that",
         placeholder: "95",
         hint: "95/100 is the flat 5% edge every tier ships with.",
       },
@@ -219,6 +227,7 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
         kind: "integer",
         min: 1n,
         max: MAX_ECONOMIC_RATIO,
+        maxReason: "the game packs it into 56 bits and reverts above that",
         placeholder: "100",
       },
     ],
@@ -250,6 +259,7 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
         kind: "integer",
         min: 1n,
         max: MAX_ECONOMIC_RATIO,
+        maxReason: "the game packs it into 56 bits and reverts above that",
         placeholder: "100",
         hint: "100 = the 1% cap that makes the house solvent by construction.",
       },
@@ -407,7 +417,7 @@ function withinBound(
       field: field.name,
       message:
         `${field.label} must be at most ${field.max}` +
-        ` - the game stores it in 56 bits and reverts above that`,
+        (field.maxReason ? ` - ${field.maxReason}` : ""),
     });
     return undefined;
   }

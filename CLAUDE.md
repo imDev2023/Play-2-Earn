@@ -33,8 +33,10 @@ It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken a
 The deployed 46630 bytecode no longer matches the tree on any of the four counts.
 Do it once, and pay the manual Blockscout verify once.
 
-**#47 is the first of the four to change the public ABI, not just the bytecode**, so it is the one that can break a consumer rather than merely a verification badge.
-`edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps` and `MAX_BURN_RATE_BPS` now return `uint56`.
+**Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
+#48 was the first and is still the sharpest: it reordered the `bets()` tuple and narrowed `placedAt` to `uint64` and `betCounter`/`activeBetId` to `uint128`, and a reordered output tuple is the silent kind (see the positional-decode trap below).
+#54 added `Treasury.GameSet`, which is additive.
+#47 narrowed five getters: `edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps` and `MAX_BURN_RATE_BPS` now return `uint56`.
 Anything holding a hand-written ABI has to move with it: `packages/web/lib/contracts.ts` did, and `packages/web/test/abi-matches-artifact.test.ts` is what forces the issue.
 The width is not arbitrary and must not be "tidied" narrower - abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the admin console reads these through `at<bigint>`, which casts rather than infers, so a `uint32` would typecheck green and then throw `Cannot mix BigInt and other types` on first render.
 
