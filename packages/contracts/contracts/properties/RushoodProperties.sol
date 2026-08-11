@@ -46,11 +46,6 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///      docs/spec/RUSHOOD-game-spec.md rather than to the contract they are checking.
     ///      §4 locks a flat 5% edge, so the multiplier is `0.95 * N`. §5 locks
     ///      "maxPayout <= ~1% of the Treasury's current RUSH balance".
-    /// @dev The handler only ever picks a tier through `% game.TIER_COUNT()`, so this is
-    ///      unreachable while the contract's tier count and the spec's table agree. It
-    ///      exists to make them disagreeing loud rather than silent.
-    error TierOutsideSpecTable(uint8 tier);
-
     uint256 private constant SPEC_EDGE_NUM = 95;
     uint256 private constant SPEC_EDGE_DEN = 100;
     uint256 private constant SPEC_SOLVENCY_CAP_DEN = 100;
@@ -76,6 +71,20 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     /// against entropy. Tracking the terms at the point they are chosen avoids both.
     uint8 internal openTier;
     uint256 internal openStake;
+
+    /// @dev `maxPayout` as it stood when the open bet was placed, snapshotted rather than
+    ///      re-read at assertion time. The contract caps "against the balance *before*
+    ///      this stake is added, so a win pays at most 1% of the pool the bet joined"
+    ///      (RushoodGame.placeBet), and the stake then joins the treasury - so re-reading
+    ///      `maxPayout()` afterwards compares the bet against a pool its own stake has
+    ///      already inflated. That is a weaker question than the spec asks, and weak in
+    ///      the direction that hides a violation.
+    uint256 internal openMaxPayout;
+
+    /// @dev The handler only ever picks a tier through `% game.TIER_COUNT()`, so this is
+    ///      unreachable while the contract's tier count and the spec's table agree. It
+    ///      exists to make them disagreeing loud rather than silent.
+    error TierOutsideSpecTable(uint8 tier);
 
     constructor() {
         rush = new Rushood(address(this));
@@ -112,9 +121,43 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
         if (ceiling < floor) return;
 
         uint256 stake = floor + (stakeSeed % (ceiling - floor + 1));
+        _place(tier, stake, clientSeed);
+    }
+
+    /// @dev Attempt a stake the cap must refuse.
+    ///
+    /// `handlePlaceBet` folds its stake into `[minBet, maxBet]`, which is what keeps the
+    /// campaign spending its budget on play - but it also means the sampler can never
+    /// propose an over-cap bet, so no sequence it generates can ever reach a state where
+    /// the cap has been breached. That made `invariant_payoutWithinCap`'s second
+    /// assertion unfalsifiable: deleting the `stake > maxBet(tier)` check from `placeBet`
+    /// left the campaign fully green, which is exactly the "passes for every input"
+    /// failure this whole property was written to remove.
+    ///
+    /// So the extreme gets its own handler rather than being left to the sampler, the
+    /// same fix and for the same reason as `handleBurnAllProfit` below. While the cap
+    /// check is intact this reverts and costs one call; once it is not, the bet lands and
+    /// the invariant fires. Twice the cap, not `maxBet + 1`, because `maxBet` truncates
+    /// down and a one-wei overage can still fit inside `maxPayout`'s own rounding slack -
+    /// the assertion would then be honestly satisfied and prove nothing either way.
+    function handlePlaceOverCapBet(uint8 tierSeed, uint256 clientSeed) public {
+        if (game.activeBetId() != 0) return;
+
+        uint8 tier = uint8(tierSeed % game.TIER_COUNT());
+        uint256 overCap = game.maxBet(tier) * 2;
+        if (overCap < game.minBet() || overCap > rush.balanceOf(address(this))) return;
+
+        _place(tier, overCap, clientSeed);
+    }
+
+    /// @dev Place a bet and record its terms, including the cap it was placed under.
+    function _place(uint8 tier, uint256 stake, uint256 clientSeed) private {
+        // Read before the call: afterwards the stake has joined the treasury.
+        uint256 capAtPlacement = game.maxPayout();
         game.placeBet(tier, stake, clientSeed);
         openTier = tier;
         openStake = stake;
+        openMaxPayout = capAtPlacement;
     }
 
     function handleSettle() public {
@@ -250,13 +293,22 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///         the one the mixins cannot make, because `_activeLiability` used to derive
     ///         its expectation from `game.payoutFor` - a wrong multiplier would have
     ///         inflated expectation and payout together and cancelled out.
-    ///      2. The open bet's win stays inside `maxPayout`. Deleting the cap check in
-    ///         `placeBet` breaks this one directly.
+    ///      2. The open bet's win stays inside the `maxPayout` it was placed under.
+    ///         Deleting the `stake > maxBet(tier)` check in `placeBet` breaks this, but
+    ///         only in company with `handlePlaceOverCapBet` - and the claim was false
+    ///         before that handler existed, which is the whole reason it does. Verified
+    ///         by planting that deletion: with the handler the campaign fails, without it
+    ///         the campaign was green. Against the live `maxPayout()` rather than the
+    ///         snapshot it is unfalsifiable either way, because the stake has by then
+    ///         joined the pool it is being measured against.
     ///      3. `maxPayout` stays within the spec's 1%. This catches a governance action
     ///         that loosens `solvencyCapDen`, which the setter currently permits down to
     ///         1 - a single win draining the pool. Unreachable from this campaign today
     ///         (see the header note on `whenEconomicsGovernable`), so it stands as the
-    ///         assertion that would fire if that ever changed.
+    ///         assertion that would fire if that ever changed. Verified by planting
+    ///         `DEFAULT_SOLVENCY_CAP_DEN = 50`, which fails it.
+    ///         Both sides do read `treasuryBalance()`, so this cannot catch that number
+    ///         itself being wrong - it catches the ratio, which is what §5 locks.
     ///
     /// The `invariant_` prefix is the vocabulary the property mixins already use -
     /// `invariant_solvency` and `invariant_conservation` are named the same way, and the
@@ -277,8 +329,8 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
             "payout: contract pays more than the spec's 0.95 x N x stake"
         );
         _check(
-            game.payoutFor(openTier, openStake) <= game.maxPayout(),
-            "solvency cap: the open bet's win exceeds maxPayout"
+            game.payoutFor(openTier, openStake) <= openMaxPayout,
+            "solvency cap: the open bet's win exceeds the maxPayout it was placed under"
         );
     }
 
