@@ -86,11 +86,12 @@ contract RushoodGame is Pausable {
 
     /// @notice Default payout numerator/denominator: 95/100 = 0.95, a 5% house edge.
     /// @dev The effective values live in `edgeNum`/`edgeDen`; these are the seed defaults.
-    uint256 public constant DEFAULT_EDGE_NUM = 95;
-    uint256 public constant DEFAULT_EDGE_DEN = 100;
+    ///      Typed to match the packed storage they seed, so initialization needs no cast.
+    uint56 public constant DEFAULT_EDGE_NUM = 95;
+    uint56 public constant DEFAULT_EDGE_DEN = 100;
 
     /// @notice Default solvency cap denominator: a single win may pay at most 1/CAP of the pool.
-    uint256 public constant DEFAULT_SOLVENCY_CAP_DEN = 100; // 1% of treasury balance
+    uint56 public constant DEFAULT_SOLVENCY_CAP_DEN = 100; // 1% of treasury balance
 
     /// @notice Default smallest allowed stake.
     uint256 public constant DEFAULT_MIN_BET = 1e18;
@@ -111,10 +112,18 @@ contract RushoodGame is Pausable {
     uint256 public constant BPS_DEN = 10_000;
 
     /// @notice Default per-play burn rate: 2.5% of the stake.
-    uint256 public constant DEFAULT_BURN_RATE_BPS = 250;
+    uint56 public constant DEFAULT_BURN_RATE_BPS = 250;
 
     /// @notice Ceiling governance may set the burn rate to: 10% of the stake.
-    uint256 public constant MAX_BURN_RATE_BPS = 1_000;
+    uint56 public constant MAX_BURN_RATE_BPS = 1_000;
+
+    /// @notice Ceiling for the packed economic ratios (`edgeNum`, `edgeDen`,
+    ///         `solvencyCapDen`), i.e. the largest value their storage can hold.
+    /// @dev Exists only so the setters can reject what no longer fits before narrowing,
+    ///      rather than truncating silently. It is deliberately NOT an economic judgement:
+    ///      at ~7.2e16 it constrains nothing a real edge or cap would use. Tightening the
+    ///      economics is governance policy and is decided separately from storage layout.
+    uint256 public constant MAX_ECONOMIC_RATIO = type(uint56).max;
 
     /// @notice The RUSH token staked and paid out.
     IERC20 public immutable token;
@@ -134,26 +143,52 @@ contract RushoodGame is Pausable {
     ///         migrated to the Safe multisig post-deploy (#22).
     address public guardian;
 
+    /// @notice Effective smallest allowed stake.
+    /// @dev Declared here, ahead of the packed economic block below, and not merely by
+    ///      taste: Solidity fills slots greedily, so a `uint56` declared straight after
+    ///      `guardian` packs into that address's 12 spare bytes and the block then
+    ///      straddles two slots. These two full-width `uint256`s force the block to start
+    ///      on a fresh boundary. `test/StoragePacking.ts` is the guard, and it caught
+    ///      exactly this before the packing was believed.
+    uint256 public minBet;
+
+    /// @notice Effective treasury floor below which the game pauses.
+    uint256 public treasuryFloor;
+
+    // --- Economic policy: five parameters sharing one storage slot (#47) ---------------
+    //
+    // 1 + 7 + 7 + 7 + 7 = 29 bytes, so the whole economy is a single `SLOAD`. `placeBet`
+    // reads three of them through `maxBet` (`edgeDen`, `solvencyCapDen`, `edgeNum`) and
+    // `settleBet` reads `edgeNum`/`edgeDen` via `payoutFor` and then `burnRateBps`; before
+    // packing each of those was a separate cold slot at 2,100 gas. Measured, not argued:
+    // see the before/after on #47.
+    //
+    // 56 bits rather than a snugger width for a reason worth keeping. abitype maps a
+    // Solidity uint to a JS `number` at <= 48 bits and to a `bigint` at >= 56, and the
+    // admin console reads these getters through a helper that *casts* rather than infers
+    // (`at<bigint>` in packages/web/lib/admin/useGameAdmin.ts). Narrowing past 48 bits
+    // would therefore hand the console a `number` while the code still claimed `bigint`,
+    // typecheck would stay green, and the first render would throw "Cannot mix BigInt and
+    // other types" out of `edgePercentLabel`. 2^56-1 is ~7.2e16, which is orders of
+    // magnitude more headroom than a ratio or a basis-point rate can need.
+    //
+    // `minBet` and `treasuryFloor` are deliberately NOT in here: they are token amounts in
+    // wei and need the full 256 bits.
+
     /// @notice When false (the default) the economic-invariant setters revert; when
     ///         governance flips it true, edge/cap/min-bet/floor become tunable via the
     ///         timelock. The opt-in switch for a governable economy.
     bool public economicsGovernable;
 
     /// @notice Effective payout numerator/denominator (winnings = stake * num * N / den).
-    uint256 public edgeNum;
-    uint256 public edgeDen;
+    uint56 public edgeNum;
+    uint56 public edgeDen;
 
     /// @notice Effective solvency cap denominator: a win pays at most 1/den of the pool.
-    uint256 public solvencyCapDen;
-
-    /// @notice Effective smallest allowed stake.
-    uint256 public minBet;
-
-    /// @notice Effective treasury floor below which the game pauses.
-    uint256 public treasuryFloor;
+    uint56 public solvencyCapDen;
 
     /// @notice Fraction of each settled stake that is burned, in basis points.
-    uint256 public burnRateBps;
+    uint56 public burnRateBps;
 
     /// @notice Head of the server hash chain: the next reveal must hash to this.
     bytes32 public currentCommit;
@@ -376,7 +411,12 @@ contract RushoodGame is Pausable {
     ///      correct if the edge or the cap change. Integer division rounds down, which
     ///      keeps `payoutFor(tier, maxBet) <= maxPayout` for every tier.
     function maxBet(uint8 tier) public view returns (uint256) {
-        return (treasuryBalance() * edgeDen) / (solvencyCapDen * edgeNum * odds(tier));
+        // The widening cast is load-bearing, not decoration. `solvencyCapDen * edgeNum` is
+        // uint56 * uint56, which Solidity evaluates *in* uint56: at governance-settable
+        // values that product can exceed 2^56 and revert, bricking `maxBet` and with it
+        // every `placeBet`. Promoting the first operand carries the whole chain to uint256.
+        return (treasuryBalance() * edgeDen)
+            / (uint256(solvencyCapDen) * edgeNum * odds(tier));
     }
 
     /// @notice Place the single active bet on a tier, locking `stake` into the treasury.
@@ -544,7 +584,9 @@ contract RushoodGame is Pausable {
     /// @param newBps New burn rate in basis points (<= MAX_BURN_RATE_BPS).
     function setBurnRate(uint256 newBps) external onlyGovernance {
         if (newBps > MAX_BURN_RATE_BPS) revert BurnRateTooHigh();
-        burnRateBps = newBps;
+        // Lossless: MAX_BURN_RATE_BPS (1,000) is itself a uint56, so the check above
+        // already confines `newBps` to the packed field's range.
+        burnRateBps = uint56(newBps);
         emit BurnRateUpdated(newBps);
     }
 
@@ -585,7 +627,9 @@ contract RushoodGame is Pausable {
 
     /// @notice Set the house edge as `num/den` (payout multiplier per unit of odds).
     /// @dev Requires `0 < num <= den` so the payout is a real, non-negative house edge;
-    ///      only settable between bets (see `whenBetInactive`).
+    ///      only settable between bets (see `whenBetInactive`). `den > MAX_ECONOMIC_RATIO`
+    ///      is rejected rather than truncated into the packed storage; `num <= den` then
+    ///      bounds the numerator too, so both casts below are provably lossless.
     function setEdge(uint256 num, uint256 den)
         external
         onlyGovernance
@@ -593,22 +637,26 @@ contract RushoodGame is Pausable {
         whenBetInactive
     {
         if (num == 0 || den == 0 || num > den) revert InvalidEconomics();
-        edgeNum = num;
-        edgeDen = den;
+        if (den > MAX_ECONOMIC_RATIO) revert InvalidEconomics();
+        edgeNum = uint56(num);
+        edgeDen = uint56(den);
         emit EdgeUpdated(num, den);
     }
 
     /// @notice Set the solvency cap denominator (a win pays at most 1/den of the pool).
     /// @dev Requires `den >= 1`; a larger denominator is a tighter (safer) cap; only
-    ///      settable between bets (see `whenBetInactive`).
+    ///      settable between bets (see `whenBetInactive`). Bounded above by
+    ///      `MAX_ECONOMIC_RATIO` so the value is rejected rather than truncated into the
+    ///      packed storage - truncation could wrap a deliberately tight cap into a loose
+    ///      one, which is the dangerous direction.
     function setSolvencyCap(uint256 den)
         external
         onlyGovernance
         whenEconomicsGovernable
         whenBetInactive
     {
-        if (den == 0) revert InvalidEconomics();
-        solvencyCapDen = den;
+        if (den == 0 || den > MAX_ECONOMIC_RATIO) revert InvalidEconomics();
+        solvencyCapDen = uint56(den);
         emit SolvencyCapUpdated(den);
     }
 

@@ -9,6 +9,7 @@
     "typecheck": "hardhat compile && tsc --noEmit",
     "lint": "solhint --config .solhint.json --max-warnings 0 'contracts/**/*.sol'",
     "node": "hardhat node",
+    "gas": "hardhat run scripts/gas-baseline.ts",
     "deploy:skeleton": "hardhat run scripts/deploy-skeleton.ts --network localhost",
     "deploy:launch": "hardhat run scripts/deploy-launch.ts --network localhost",
     "checklist": "hardhat run scripts/launch-checklist.ts --network localhost",
