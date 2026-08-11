@@ -98,11 +98,13 @@ describe("parseAdminOp", () => {
     assert.deepEqual(errorsFor(parseAdminOp("setSolvencyCap", { den: tooBig })), ["den"]);
     assert.deepEqual(errorsFor(parseAdminOp("setEdge", { num: "1", den: tooBig })), ["den"]);
 
-    // `num` carries the bound as well. On-chain `num <= den` makes an over-wide `num`
-    // unreachable without an over-wide `den`, so it can only be exercised alongside one
-    // and both fields report - which is this parser's documented behaviour, see "reports
-    // every bad field at once". Belt and braces, but an unpinned bound is one refactor
-    // from being dropped silently, and the previous revision claimed coverage it lacked.
+    // `num` carries the bound as well, and it pins in isolation: a failed bound leaves
+    // the parse incomplete, and `crossCheck` (which is what would otherwise fire on
+    // `num > den`) only runs on a complete parse. So an over-wide `num` against a
+    // perfectly ordinary `den` reports exactly one field.
+    assert.deepEqual(errorsFor(parseAdminOp("setEdge", { num: tooBig, den: "100" })), ["num"]);
+
+    // Both over-wide reports both, per "reports every bad field at once" below.
     assert.deepEqual(errorsFor(parseAdminOp("setEdge", { num: tooBig, den: tooBig })), [
       "num",
       "den",

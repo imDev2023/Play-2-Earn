@@ -36,8 +36,10 @@ Do it once, and pay the manual Blockscout verify once.
 **Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
 #48 was the first and is still the sharpest: it reordered the `bets()` tuple and narrowed `placedAt` to `uint64` and `betCounter`/`activeBetId` to `uint128`, and a reordered output tuple is the silent kind (see the positional-decode trap below).
 #54 added `Treasury.GameSet`, which is additive.
-#47 narrowed five getters: `edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps` and `MAX_BURN_RATE_BPS` now return `uint56`.
-Anything holding a hand-written ABI has to move with it: `packages/web/lib/contracts.ts` did, and `packages/web/test/abi-matches-artifact.test.ts` is what forces the issue.
+#47 narrowed **nine** getters to `uint56` and added a tenth: the five effective values and bounds (`edgeNum`, `edgeDen`, `solvencyCapDen`, `burnRateBps`, `MAX_BURN_RATE_BPS`) plus the four seed constants (`DEFAULT_EDGE_NUM`, `DEFAULT_EDGE_DEN`, `DEFAULT_SOLVENCY_CAP_DEN`, `DEFAULT_BURN_RATE_BPS`), with `MAX_ECONOMIC_RATIO` new and additive.
+Count the constants, not just the variables - `public constant` emits a getter too, and the first draft of this paragraph missed all four.
+`packages/web/lib/contracts.ts` moved with the five it declares, and `packages/web/test/abi-matches-artifact.test.ts` forces that.
+**It does not cover the other four**: the `DEFAULT_*` getters are absent from `GAME_ABI`, so the guard is only as wide as the ABI someone chose to write down, and an outside consumer reading them breaks with nothing in this repo noticing.
 The width is not arbitrary and must not be "tidied" narrower - abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the admin console reads these through `at<bigint>`, which casts rather than infers, so a `uint32` would typecheck green and then throw `Cannot mix BigInt and other types` on first render.
 
 ## Traps that cost time

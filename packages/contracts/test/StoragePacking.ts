@@ -87,9 +87,10 @@ describe("Storage packing holds", () => {
     // very next slot; a new variable slipped in between pushes it along and fails here
     // while the assertion above still passes, which is what makes this worth writing.
     // (Verified by planting exactly that.) Note what it does NOT prove: a small field
-    // added inside the block's three spare bytes passes both assertions - acceptable,
-    // because the one-slot gas claim survives that. Both sides are read off the chain,
-    // so neither restates arithmetic this test performed itself.
+    // added inside the block's three spare bytes slips past both assertions while it
+    // reads zero - acceptable, because the one-slot gas claim survives that, and a
+    // fixture that actually sets it fails the word comparison above. Both sides are read
+    // off the chain, so neither restates arithmetic this test performed itself.
     const packedAt = slots.indexOf(expected);
     expect(BigInt(await game.currentCommit())).to.equal(slots[packedAt + 1]);
   });
