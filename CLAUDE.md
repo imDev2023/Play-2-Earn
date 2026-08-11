@@ -119,6 +119,12 @@ The solvency property could not find a deliberately planted break, because the h
 Put the extremes in as their own zero-argument calls rather than trusting the sampler to land on them. `handleBurnAllProfit` in `contracts/properties/RushoodProperties.sol` is that fix.
 Corollary, and the rule that governs this whole area: **prove the check fails on a planted bug before believing it passes** - the run that "passed" first was measuring nothing.
 
+It then bit a second time, in the property written to answer the first review, and the shape is worth keeping because it is subtler.
+`handlePlaceBet` folds its stake into `[minBet, maxBet]` so the campaign spends its budget on play, which also means **no sequence it can generate ever breaches the cap** - so `invariant_payoutWithinCap`'s "the win stays inside maxPayout" assertion stayed green with the `stake > maxBet(tier)` check deleted from `placeBet` outright.
+A folded input is a silent restriction on the reachable state space, and the assertion about the state you folded away is the one that cannot fail.
+`handlePlaceOverCapBet` is that fix.
+The same assertion was also measured against a live `maxPayout()` re-read at assertion time, which the stake had by then inflated; it is snapshotted at placement now, because the contract caps against the pool the bet *joined*.
+
 **A check that recomputes the implementation and then compares that recomputation to itself passes for every input.**
 The #54 review found the pure form of it. `test/RoundingDirection.ts` computed `const burned = (stake * bps) / den` in TypeScript and asserted `burned * den <= stake * bps` - an identity of integer division, true whatever the contract does, and it never called the contract at all.
 It reads exactly like a real test, and a waiver pointed at it as the evidence for `arith-rounding-tested`.
@@ -131,8 +137,14 @@ Nothing counter-checks this: `slither.config.json` sets `exclude_dependencies: t
 Three more attestations were stale in the same direction, each because the PR's own new files changed a count the attestation had stated as absolute.
 When an attestation says "there are exactly N" or "none exist", re-grep it after every commit in the same PR.
 
-**Actions are pinned by SHA, and the new workflow forgot.**
-The rule is stated in a comment at `.github/workflows/ci.yml:17`. All 17 `uses:` in the new 218-line `evm-security.yml` are tag-pinned, and `ci.yml`'s own `connected-e2e` job (from #49) is too. Unfixed as of `a86aad2`.
+**Actions are pinned by SHA, and a new workflow will forget.**
+The rule is stated in a comment at `.github/workflows/ci.yml:18`.
+`evm-security.yml` shipped with all 17 of its `uses:` tag-pinned, and `ci.yml`'s own `connected-e2e` job (from #49) had three more; both were fixed on the branch, so every `uses:` in the repo is now a 40-hex SHA with the release in a trailing comment.
+Resolve the tag **already in use** to its SHA rather than taking whatever the action's latest release is: at the time of writing, the six `actions/*` in use were two to four majors behind, and pinning is not the moment to take a major bump.
+
+**`npm run lint` and CI's lint step must stay the same command.**
+They did not, and the divergence hid a red CI job behind a green local one for a full session: the script omitted `--max-warnings 0`, so it exited 0 on the three solhint warnings that made CI's Lint step exit 1.
+The script now carries both flags. This is the local-command form of "a PR body claiming a green suite is not evidence" - if the command you run to check is not the command the gate runs, it is not a check.
 
 **Check for path collisions before adding a file while another PR is in review** with `git diff main...<other-branch> --stat`. An ABI-order pin once landed at exactly the path #48 was already creating.
 
