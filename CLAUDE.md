@@ -41,7 +41,8 @@ PR #54's event is additive.
 PR #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
 
 **Count the constants, not just the variables** - `public constant` emits a getter, so the nine are **five constants and four variables**, not the other way round.
-The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`; `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`; `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and never narrowed.
+The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`, and the variables are `edgeNum`, `edgeDen`, `solvencyCapDen` and `burnRateBps`.
+Both near-misses are worth naming: `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`, and `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
 Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
 `abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
 All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`.
@@ -109,8 +110,9 @@ Both `toBetView` revisions above were written that way, and size is not a proxy 
 **PR #55 and PR #56 each ran round after round, and every round of both found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
 That includes factual errors written into *this file*, and, separately, one written into `hardhat.config.ts` - into the very comment the round before had just corrected elsewhere.
 Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
-The sharpest evidence is a `CLAUDE.md`-only fix that reintroduced the column-zero `#` hazard one line below where it had just fixed it, caught only because the fix itself got a round.
-**When a claim appears in two files, fixing one of them is the default failure** - PR #56 hit that repeatedly, and hit it again in the very commit whose message named it.
+The sharpest evidence: a `CLAUDE.md`-only fix moved a line off column zero so a leading `#47` would stop rendering as an H1 heading, and opened its very next added line with `#56`.
+One line below its own fix, and only a round over the fix caught it.
+**When a claim appears in two files, fixing one of them is the default failure**, and naming the trap in a commit message does not stop you doing it in that same commit.
 
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is, and only for the commit the remote actually has - a branch ahead of its remote makes even that stale, which is the sharper form of the same trap.
