@@ -1,5 +1,5 @@
 /**
- * Where "local" is, and how to be sure you actually got there.
+ * Where "local" is.
  *
  * Hardhat ships a built-in `localhost` network pointing at `127.0.0.1:8545`, and it
  * applies whenever the config declares no `localhost` entry of its own. That default is
@@ -8,24 +8,29 @@
  * redeploy rehearsal 8545 was held by an unrelated `anvil` forking BNB testnet, and the
  * launch deployment would have gone to it without a word.
  *
- * The primary defence is not here: it is `chainId` on the `localhost` entry in
- * hardhat.config.ts, which makes Hardhat wrap the provider in its own
- * `ChainIdValidatorProvider` (`internal/core/providers/construction.js`) and reject a
- * mismatch on the first request - covering every task and script, including ones nobody
- * remembered to edit. `assertLocalDevChain` below is the second layer, stated at the top
- * of the scripts that spend money so the refusal names the reason rather than surfacing
- * as a provider error several frames away.
+ * The enforcement is not in this file and deliberately so. `hardhat.config.ts` declares
+ * `chainId` on the `localhost` entry, which makes Hardhat wrap the provider in its own
+ * `ChainIdValidatorProvider` and reject a mismatch on the first request. That covers every
+ * task and script, including ones written after this comment and ones nobody thought to
+ * edit.
  *
- * `localRpcUrl` is the escape hatch that makes the guard survivable: without a way to
- * move off a busy port, the only remedy for a collision is to stop working.
+ * An earlier version of this module also exported an `assertLocalDevChain` that each
+ * deploy script called at its top. It was removed because it could never run: the
+ * `chainId` it took as an argument had to be fetched through the very provider that
+ * throws, so the validator fired while the argument was still being evaluated. A guard
+ * that cannot execute is worse than no guard, because the next reader trusts it. If a
+ * second layer is ever wanted, it has to sit somewhere that does not go through Hardhat's
+ * provider at all.
+ *
+ * What remains here is the escape hatch that makes the enforcement survivable: without a
+ * way to move off a busy port, the only remedy for a collision is to stop working.
  *
  * KNOWN LIMIT. A chain id is evidence of which network answered, not of what state it
  * holds. `hardhat node --fork <mainnet>` and `anvil --fork-url <mainnet>` both keep
- * reporting 31337, so a fork passes this check while carrying foreign balances and
- * contract addresses. The rehearsal collision was caught only because that anvil had
- * adopted its fork's id. Guarding that too would mean fingerprinting genesis, which is a
- * different job; what this module promises is that a *different chain* cannot be mistaken
- * for the local one.
+ * reporting 31337, so a fork passes while carrying foreign balances and contract
+ * addresses. The rehearsal collision was caught only because that anvil had adopted its
+ * fork's id. Guarding that would mean fingerprinting genesis, which is a different job;
+ * what is promised here is that a *different chain* cannot be mistaken for the local one.
  *
  * Deliberately free of any Hardhat import: `hardhat.config.ts` consumes this while it is
  * still being evaluated, so anything reachable from here must not reach back.
@@ -51,9 +56,11 @@ export function isLocalNetwork(networkName: string): boolean {
  * The URL the `localhost` network points at, with `LOCAL_RPC_PORT` moving it off a port
  * something else already holds.
  *
- * The same variable is read by the `node` script in package.json, so the node and the
- * scripts that talk to it move together. Moving only one of them would leave every
- * command failing to connect, which is a worse outcome than the collision.
+ * The `node` script in package.json reads the same variable through shell `:-`, so the
+ * node and the scripts that talk to it move together. Unset and empty are both treated as
+ * "not set" here for exactly that reason - `${LOCAL_RPC_PORT:-8545}` cannot distinguish
+ * them, and a rule this file enforced alone would put the node on one port and every
+ * client on another.
  *
  * A malformed port throws rather than falling back. Falling back would hand the default
  * port to whoever set the variable *because* the default port was taken - reintroducing
@@ -62,9 +69,11 @@ export function isLocalNetwork(networkName: string): boolean {
  */
 export function localRpcUrl(env: Env = process.env): string {
   const rawPort = env.LOCAL_RPC_PORT;
-  if (rawPort === undefined) return `http://${DEFAULT_LOCAL_HOST}:${DEFAULT_LOCAL_PORT}`;
+  if (rawPort === undefined || rawPort === "") {
+    return `http://${DEFAULT_LOCAL_HOST}:${DEFAULT_LOCAL_PORT}`;
+  }
 
-  // `Number` accepts whitespace and empty strings; neither is a port.
+  // `Number` accepts whitespace, so match the digits explicitly.
   const port = /^\d+$/.test(rawPort) ? Number(rawPort) : Number.NaN;
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(
@@ -72,22 +81,4 @@ export function localRpcUrl(env: Env = process.env): string {
     );
   }
   return `http://${DEFAULT_LOCAL_HOST}:${port}`;
-}
-
-/**
- * Refuse to treat a foreign chain as a local rehearsal.
- *
- * Only ever fires for the local network names. A public network carries its own
- * `chainId` in the config and Hardhat checks that itself, so asserting anything about
- * them here would be a second, quieter source of truth about which chain is which.
- */
-export function assertLocalDevChain(networkName: string, chainId: bigint): void {
-  if (!isLocalNetwork(networkName)) return;
-  if (chainId === LOCAL_CHAIN_ID) return;
-
-  throw new Error(
-    `Network "${networkName}" resolved to chain ${chainId}, but a local dev chain reports ` +
-      `${LOCAL_CHAIN_ID}. Something else is answering on that RPC endpoint - check what is ` +
-      `listening, and set LOCAL_RPC_PORT to reach this project's node.`,
-  );
 }

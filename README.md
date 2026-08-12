@@ -52,6 +52,19 @@ installed it reads **Connect MetaMask** instead - the test wallet is a last reso
 only when there is no real one, and only when the app targets a local node at all. Contract addresses default to the deterministic local-deploy addresses;
 override with `NEXT_PUBLIC_GAME_ADDRESS` / `NEXT_PUBLIC_RUSH_ADDRESS` / `NEXT_PUBLIC_RPC_URL`.
 
+**If port 8545 is already taken**, set `LOCAL_RPC_PORT` and every command above follows it.
+
+```bash
+LOCAL_RPC_PORT=8548 npm run node --workspace @rushood/contracts
+LOCAL_RPC_PORT=8548 npm run deploy:skeleton --workspace @rushood/contracts
+```
+
+The `localhost` network declares `chainId: 31337`, so Hardhat refuses to talk to anything else rather than deploying into whatever answered.
+That is worth knowing before you see it: a rehearsal found 8545 held by an unrelated `anvil` forking BNB testnet, which would otherwise have received a full launch deployment.
+The failure reads `HH101: Hardhat was set to use chain id 31337, but connected to a chain with id <n>`, and `LOCAL_RPC_PORT` is the fix.
+Note this only proves *which chain* answered, not what state it holds - a forked node still reports 31337.
+The web app does not read `LOCAL_RPC_PORT`; point it at a moved node with `NEXT_PUBLIC_RPC_URL`.
+
 **Relayer + refund (#19).** The relayer manages the server hash chain and rotates to a fresh
 chain before exhaustion (`RELAYER_CHAIN_LENGTH`, `RELAYER_ROTATION_MARGIN`). Players pay gas
 only for `placeBet`; settlement is on the relayer. If the relayer goes dark, any bet left
