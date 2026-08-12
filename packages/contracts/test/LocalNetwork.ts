@@ -109,8 +109,8 @@ describe("local network pinning", () => {
   /**
    * Two checks, because they answer to different authorities.
    *
-   * The literal is the anchor: an external constant fails the moment `LOCAL_CHAIN_ID`
-   * drifts. (The danger round one flagged was passing the constant *in as an argument*
+   * The literal is the anchor: a value written out here, rather than the module's own
+   * constant, fails the moment `LOCAL_CHAIN_ID` drifts. (The danger round one flagged was passing the constant *in as an argument*
    * to the code under test, which holds for any value it takes; comparing against a
    * hand-typed literal is the opposite, and is what makes it a pin.)
    *

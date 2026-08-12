@@ -71,8 +71,10 @@ const config: HardhatUserConfig = {
      *
      * `chainId` is the load-bearing half. Hardhat wraps any HTTP network that declares one
      * in `ChainIdValidatorProvider` and rejects a mismatch on the first request, so this
-     * covers every task and script - `hardhat console`, an ad-hoc `hardhat run`, the
-     * relayer - rather than only the ones someone remembered to add a check to.
+     * covers everything that goes through Hardhat - `hardhat test`, `hardhat console`, any
+     * `hardhat run` - rather than only the scripts someone remembered to add a check to.
+     * It does not reach `relayer-service.ts`, which builds its own provider; see
+     * scripts/lib/local-network.ts for why that one needs no equivalent.
      * `LOCAL_RPC_PORT` (read by the `node` script too) moves off a busy port.
      */
     localhost: { url: localRpcUrl(), chainId: Number(LOCAL_CHAIN_ID) },
