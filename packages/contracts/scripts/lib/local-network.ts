@@ -11,8 +11,10 @@
  * The enforcement is not in this file and deliberately so. `hardhat.config.ts` declares
  * `chainId` on the `localhost` entry, which makes Hardhat wrap the provider in its own
  * `ChainIdValidatorProvider` and reject a mismatch on the first request. That covers every
- * task and script, including ones written after this comment and ones nobody thought to
- * edit.
+ * script that goes through Hardhat, including ones written after this comment and ones
+ * nobody thought to edit. It does not reach `relayer-service.ts`, which builds its own
+ * `JsonRpcProvider`; that script requires an explicit `RELAYER_RPC_URL` with no default,
+ * so it has no silent-fallback hazard of this kind to fix.
  *
  * An earlier version of this module also exported an `assertLocalDevChain` that each
  * deploy script called at its top. It was removed because it could never run: the

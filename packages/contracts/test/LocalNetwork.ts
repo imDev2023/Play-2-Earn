@@ -104,13 +104,27 @@ describe("local network pinning", () => {
     it("pins the localhost chain id so Hardhat itself rejects a foreign node", () => {
       expect(loadConfig().networks?.localhost?.chainId).to.equal(31337);
     });
+  });
 
-    /**
-     * Asks the running node rather than restating the constant. A test that compared
-     * LOCAL_CHAIN_ID to a hand-typed 31337 would hold for whatever value the constant
-     * took, including a wrong one.
-     */
-    it("agrees with the chain id Hardhat's own network reports", async () => {
+  /**
+   * Two checks, because they answer to different authorities.
+   *
+   * The literal is the anchor: an external constant fails the moment `LOCAL_CHAIN_ID`
+   * drifts. (The danger round one flagged was passing the constant *in as an argument*
+   * to the code under test, which holds for any value it takes; comparing against a
+   * hand-typed literal is the opposite, and is what makes it a pin.)
+   *
+   * The provider check asks Hardhat instead of the repo, which is what catches the case
+   * where 31337 stops being the right answer. Note it reads the in-process `hardhat`
+   * network, since that is what `hardhat test` runs on - not the `localhost` entry, and
+   * not a separately running node.
+   */
+  describe("LOCAL_CHAIN_ID", () => {
+    it("is the id this project means by a local dev chain", () => {
+      expect(LOCAL_CHAIN_ID).to.equal(31337n);
+    });
+
+    it("matches what the in-process Hardhat network reports", async () => {
       expect((await ethers.provider.getNetwork()).chainId).to.equal(LOCAL_CHAIN_ID);
     });
   });
