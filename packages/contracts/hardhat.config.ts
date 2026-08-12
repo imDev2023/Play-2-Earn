@@ -1,6 +1,6 @@
 import type { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
-import { localRpcUrl } from "./scripts/lib/local-network";
+import { LOCAL_CHAIN_ID, localRpcUrl } from "./scripts/lib/local-network";
 
 /**
  * Robinhood Chain (Arbitrum Orbit L2) is the production target - see the spec.
@@ -67,10 +67,15 @@ const config: HardhatUserConfig = {
      * but not the same guarantee: without an entry here, `--network localhost` resolves to
      * whatever is listening on 8545, and a port is a shared resource on a dev machine. A
      * rehearsal found an unrelated `anvil` forking BNB testnet sitting there, ready to
-     * receive this project's launch deployment. `LOCAL_RPC_PORT` moves off a busy port;
-     * `assertLocalDevChain` on the deploy path catches the case where nobody did.
+     * receive this project's launch deployment.
+     *
+     * `chainId` is the load-bearing half. Hardhat wraps any HTTP network that declares one
+     * in `ChainIdValidatorProvider` and rejects a mismatch on the first request, so this
+     * covers every task and script - `hardhat console`, an ad-hoc `hardhat run`, the
+     * relayer - rather than only the ones someone remembered to add a check to.
+     * `LOCAL_RPC_PORT` (read by the `node` script too) moves off a busy port.
      */
-    localhost: { url: localRpcUrl() },
+    localhost: { url: localRpcUrl(), chainId: Number(LOCAL_CHAIN_ID) },
     robinhoodTestnet: {
       url: process.env.ROBINHOOD_TESTNET_RPC_URL ?? "",
       chainId: 46630,

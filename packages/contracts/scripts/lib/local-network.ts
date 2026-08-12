@@ -8,12 +8,24 @@
  * redeploy rehearsal 8545 was held by an unrelated `anvil` forking BNB testnet, and the
  * launch deployment would have gone to it without a word.
  *
- * Two defences, kept separate because they fail in different ways:
+ * The primary defence is not here: it is `chainId` on the `localhost` entry in
+ * hardhat.config.ts, which makes Hardhat wrap the provider in its own
+ * `ChainIdValidatorProvider` (`internal/core/providers/construction.js`) and reject a
+ * mismatch on the first request - covering every task and script, including ones nobody
+ * remembered to edit. `assertLocalDevChain` below is the second layer, stated at the top
+ * of the scripts that spend money so the refusal names the reason rather than surfacing
+ * as a provider error several frames away.
  *
- *   `localRpcUrl`        - lets a run move off a busy port, so the collision is avoidable.
- *   `assertLocalDevChain` - refuses to proceed when the thing that answered is not a local
- *                           dev chain, which is what catches the run where nobody knew to
- *                           move ports in the first place.
+ * `localRpcUrl` is the escape hatch that makes the guard survivable: without a way to
+ * move off a busy port, the only remedy for a collision is to stop working.
+ *
+ * KNOWN LIMIT. A chain id is evidence of which network answered, not of what state it
+ * holds. `hardhat node --fork <mainnet>` and `anvil --fork-url <mainnet>` both keep
+ * reporting 31337, so a fork passes this check while carrying foreign balances and
+ * contract addresses. The rehearsal collision was caught only because that anvil had
+ * adopted its fork's id. Guarding that too would mean fingerprinting genesis, which is a
+ * different job; what this module promises is that a *different chain* cannot be mistaken
+ * for the local one.
  *
  * Deliberately free of any Hardhat import: `hardhat.config.ts` consumes this while it is
  * still being evaluated, so anything reachable from here must not reach back.
@@ -36,10 +48,12 @@ export function isLocalNetwork(networkName: string): boolean {
 }
 
 /**
- * The URL the `localhost` network points at.
+ * The URL the `localhost` network points at, with `LOCAL_RPC_PORT` moving it off a port
+ * something else already holds.
  *
- * `LOCAL_RPC_URL` wins outright, for a node that is not on this host at all. Otherwise
- * `LOCAL_RPC_PORT` moves the port while keeping the loopback host.
+ * The same variable is read by the `node` script in package.json, so the node and the
+ * scripts that talk to it move together. Moving only one of them would leave every
+ * command failing to connect, which is a worse outcome than the collision.
  *
  * A malformed port throws rather than falling back. Falling back would hand the default
  * port to whoever set the variable *because* the default port was taken - reintroducing
@@ -47,9 +61,6 @@ export function isLocalNetwork(networkName: string): boolean {
  * to avoid it.
  */
 export function localRpcUrl(env: Env = process.env): string {
-  const url = env.LOCAL_RPC_URL;
-  if (url !== undefined && url !== "") return url;
-
   const rawPort = env.LOCAL_RPC_PORT;
   if (rawPort === undefined) return `http://${DEFAULT_LOCAL_HOST}:${DEFAULT_LOCAL_PORT}`;
 
@@ -66,10 +77,9 @@ export function localRpcUrl(env: Env = process.env): string {
 /**
  * Refuse to treat a foreign chain as a local rehearsal.
  *
- * Only ever fires for the local network names. A public network is identified by its own
- * `chainId` in the config, which Hardhat itself checks against the node, so there is
- * nothing to add there - and asserting anything about them here would be a second,
- * quieter source of truth about which chain is which.
+ * Only ever fires for the local network names. A public network carries its own
+ * `chainId` in the config and Hardhat checks that itself, so asserting anything about
+ * them here would be a second, quieter source of truth about which chain is which.
  */
 export function assertLocalDevChain(networkName: string, chainId: bigint): void {
   if (!isLocalNetwork(networkName)) return;
@@ -78,6 +88,6 @@ export function assertLocalDevChain(networkName: string, chainId: bigint): void 
   throw new Error(
     `Network "${networkName}" resolved to chain ${chainId}, but a local dev chain reports ` +
       `${LOCAL_CHAIN_ID}. Something else is answering on that RPC endpoint - check what is ` +
-      `listening, and set LOCAL_RPC_PORT (or LOCAL_RPC_URL) to reach this project's node.`,
+      `listening, and set LOCAL_RPC_PORT to reach this project's node.`,
   );
 }

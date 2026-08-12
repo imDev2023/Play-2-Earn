@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { ethers, network } from "hardhat";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead, settleNextBet, shouldRotate } from "./lib/relayer-core";
-import { isLocalNetwork } from "./lib/local-network";
+import { assertLocalDevChain, isLocalNetwork } from "./lib/local-network";
 
 /**
  * Local relayer for the game.
@@ -51,6 +51,11 @@ function loadDeployment() {
 }
 
 async function main() {
+  // The seed check above is name-based, and a name is a claim about where this is going.
+  // This relayer signs real settlements with the public dev seed, so the claim has to be
+  // checked against the chain that actually answered before a single one is sent.
+  assertLocalDevChain(network.name, (await ethers.provider.getNetwork()).chainId);
+
   const { game: gameAddress } = loadDeployment();
   const relayer = (await ethers.getSigners())[2] ?? (await ethers.getSigners())[0];
   const game = await ethers.getContractAt("RushoodGame", gameAddress, relayer);

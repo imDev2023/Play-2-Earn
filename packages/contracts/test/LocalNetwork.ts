@@ -30,12 +30,6 @@ describe("local network pinning", () => {
       expect(localRpcUrl({ LOCAL_RPC_PORT: "8548" })).to.equal("http://127.0.0.1:8548");
     });
 
-    it("lets LOCAL_RPC_URL name a host, and prefers it over the port", () => {
-      expect(
-        localRpcUrl({ LOCAL_RPC_URL: "http://10.0.0.4:9001", LOCAL_RPC_PORT: "8548" }),
-      ).to.equal("http://10.0.0.4:9001");
-    });
-
     /**
      * A typo'd port silently falling back to 8545 would reintroduce the exact bug this
      * module exists to remove, and would do it to someone who had explicitly tried to
@@ -62,9 +56,17 @@ describe("local network pinning", () => {
   });
 
   describe("assertLocalDevChain", () => {
+    /**
+     * The literal, not `LOCAL_CHAIN_ID`. Passing the module its own constant back would
+     * hold for any value the constant took, including a wrong one.
+     */
     it("accepts a genuine local dev chain", () => {
-      expect(() => assertLocalDevChain("localhost", LOCAL_CHAIN_ID)).to.not.throw();
-      expect(() => assertLocalDevChain("hardhat", LOCAL_CHAIN_ID)).to.not.throw();
+      expect(() => assertLocalDevChain("localhost", 31337n)).to.not.throw();
+      expect(() => assertLocalDevChain("hardhat", 31337n)).to.not.throw();
+    });
+
+    it("pins the constant to the id Hardhat's node actually reports", () => {
+      expect(LOCAL_CHAIN_ID).to.equal(31337n);
     });
 
     /** The rehearsal case: BNB testnet is chain 97, and it was answering on 8545. */
@@ -96,11 +98,21 @@ describe("local network pinning", () => {
   describe("hardhat.config.ts", () => {
     const CONFIG = require.resolve("../hardhat.config");
 
-    function loadConfig(): { networks?: Record<string, { url?: string }> } {
+    function loadConfig(): {
+      networks?: Record<string, { url?: string; chainId?: number }>;
+    } {
       delete require.cache[CONFIG];
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       return require("../hardhat.config").default;
     }
+
+    /**
+     * Cleared before as well as after. Only clearing afterwards would fail the default
+     * case for anyone who had exported LOCAL_RPC_PORT in their shell - which is exactly
+     * the person this feature exists for.
+     */
+    beforeEach(() => {
+      delete process.env.LOCAL_RPC_PORT;
+    });
 
     afterEach(() => {
       delete process.env.LOCAL_RPC_PORT;
@@ -114,6 +126,15 @@ describe("local network pinning", () => {
     it("derives that url from the environment, not a literal", () => {
       process.env.LOCAL_RPC_PORT = "8548";
       expect(loadConfig().networks?.localhost?.url).to.equal("http://127.0.0.1:8548");
+    });
+
+    /**
+     * The primary defence, and the one that covers tasks nobody added a check to:
+     * Hardhat wraps an HTTP network declaring a chainId in `ChainIdValidatorProvider`
+     * and rejects a mismatch on the first request.
+     */
+    it("pins the localhost chain id so Hardhat itself rejects a foreign node", () => {
+      expect(loadConfig().networks?.localhost?.chainId).to.equal(31337);
     });
   });
 });

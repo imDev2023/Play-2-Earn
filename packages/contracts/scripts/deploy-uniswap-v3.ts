@@ -7,6 +7,7 @@ import {
   assertSelfDeployIsWarranted,
   deployUniswapV3Stack,
 } from "./lib/uniswap-v3-stack";
+import { assertLocalDevChain } from "./lib/local-network";
 
 /**
  * Stand up Uniswap v3 on a chain that lacks one (#26).
@@ -30,6 +31,10 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   const chainId = (await ethers.provider.getNetwork()).chainId;
 
+  // `assertSelfDeployIsWarranted` only rejects chains that already have a canonical
+  // Uniswap, so an unknown chain answering on the local port passes it. Check the
+  // network is the one that was asked for before deploying a factory onto it.
+  assertLocalDevChain(network.name, chainId);
   assertSelfDeployIsWarranted(chainId);
 
   const dir = join(__dirname, "..", "deployments");
