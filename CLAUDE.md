@@ -41,9 +41,8 @@ PR #54's event is additive.
 PR #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
 
 **Count the constants, not just the variables** - `public constant` emits a getter, so the nine are **five constants and four variables**, not the other way round.
-The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS` (two further `DEFAULT_*` exist, `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR`, and stayed `uint256`); the variables are `edgeNum`, `edgeDen`, `solvencyCapDen` and `burnRateBps`.
-`economicsGovernable` is the trap: it sits inside the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
-Four plus five totals the same nine as five plus four, so **the total agreeing is not the check** - which is how the wrong split survived two drafts of this paragraph.
+The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`; `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`; `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and never narrowed.
+Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
 `abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
 All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`.
 
@@ -107,12 +106,11 @@ If `agent-browser eval` starts returning `""`, check `get url` - the tab has gon
 The cadence is in `AGENTS.md` (on `main` since #52) and is not restated here; what belongs here is why it keeps being skipped.
 A fix closing a finding feels like the end of a review rather than the start of one, and it is written under the impression that the problem is already understood - the exact state in which a fix reproduces the bug it was meant to remove.
 Both `toBetView` revisions above were written that way, and size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
-**PR #55 and PR #56 each ran round after round, and every round of both found something real** - so do not carry a round count here, because it goes stale the next time this rule is obeyed.
+**PR #55 and PR #56 each ran round after round, and every round of both found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
 That includes factual errors written into *this file*, and, separately, one written into `hardhat.config.ts` - into the very comment the round before had just corrected elsewhere.
 Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
-A round over nothing but a `CLAUDE.md` edit found a factual error in the narrowed-getters paragraph above, four sentence-per-line breaches, and a stale review note in a PR body.
-The round over *that* fix then caught it reintroducing the column-zero `#` hazard one line below where it had just fixed it, which is the whole rule in miniature.
-**When a claim appears in two files, fixing one of them is the default failure**, and it is what PR #56's fourth round caught.
+The sharpest evidence is a `CLAUDE.md`-only fix that reintroduced the column-zero `#` hazard one line below where it had just fixed it, caught only because the fix itself got a round.
+**When a claim appears in two files, fixing one of them is the default failure** - PR #56 hit that repeatedly, and hit it again in the very commit whose message named it.
 
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is, and only for the commit the remote actually has - a branch ahead of its remote makes even that stale, which is the sharper form of the same trap.
@@ -211,7 +209,7 @@ PR #56 declares `localhost` with `chainId: Number(LOCAL_CHAIN_ID)`, which is `31
 That makes Hardhat's own `ChainIdValidatorProvider` reject a foreign node on the first request, which is wider than any hand-placed check because it covers `hardhat test` and `hardhat console` too.
 `LOCAL_RPC_PORT` moves the node and its clients off a busy port together.
 **"Wider" stops at Hardhat's edge**, and the boundary is the part worth remembering: anything building its own provider is untouched by this.
-`relayer-service.ts` is the live example, left unguarded on purpose because `RELAYER_RPC_URL` is required with no default (enforced in `scripts/service/config.ts`, not in the service file itself) and so has no silent-fallback hazard of this kind.
+`relayer-service.ts` is the live example, left unguarded on purpose because it requires `RELAYER_RPC_URL` with no default and so has no silent-fallback hazard of this kind.
 It proves *which chain* answered, not what state it holds: a forked node still reports 31337.
 
 **The durable lesson from that review: a guard whose argument is fetched through the thing it guards can never run.**
