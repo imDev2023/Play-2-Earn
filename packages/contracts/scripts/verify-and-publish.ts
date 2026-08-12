@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { artifacts, ethers, network } from "hardhat";
 import { CANONICAL_V3_POSITION_MANAGERS } from "./lib/uniswap-v3-stack";
 import { type VerificationRequest, verifyContract } from "./lib/blockscout-verify";
+import { isLocalNetwork } from "./lib/local-network";
 
 /**
  * Verify every deployed contract on Blockscout and publish the address list
@@ -56,12 +57,14 @@ interface Deployment {
 }
 
 async function main() {
-  const deploymentPath = join(__dirname, "..", "deployments", `${network.name}.json`);
-  const deployment: Deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
-
-  if (network.name === "localhost" || network.name === "hardhat") {
+  // Checked before the deployment file is read, so running this locally reports the
+  // reason rather than an ENOENT for a file it was never going to be able to use.
+  if (isLocalNetwork(network.name)) {
     throw new Error("Nothing to verify on a local node - run this against a public network.");
   }
+
+  const deploymentPath = join(__dirname, "..", "deployments", `${network.name}.json`);
+  const deployment: Deployment = JSON.parse(readFileSync(deploymentPath, "utf8"));
 
   const targets: VerifyTarget[] = [
     { name: "Rushood", address: deployment.rush, constructorArguments: [deployment.deployer] },

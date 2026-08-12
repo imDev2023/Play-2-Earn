@@ -6,6 +6,7 @@ import { epochChain } from "./lib/relayer-core";
 import { allocations, distributeGenesis, type GenesisDestinations } from "./lib/genesis";
 import { POSITION_MANAGER_ABI, WETH_ABI, seedPoolAndLock } from "./lib/seed-pool";
 import { DEFAULT_FEE_TIER } from "./lib/uniswap-price";
+import { isLocalNetwork } from "./lib/local-network";
 
 /**
  * The full launch deployment (#26, spec §10): token, governance, game, vesting, LP lock,
@@ -84,7 +85,7 @@ async function main() {
   const signers = await ethers.getSigners();
   const [deployer, relayerSigner] = signers;
   const chainId = (await ethers.provider.getNetwork()).chainId;
-  const isLocal = network.name === "localhost" || network.name === "hardhat";
+  const isLocal = isLocalNetwork(network.name);
   const masterSeed = resolveMasterSeed(isLocal);
 
   // On a real network every role must be named explicitly. Locally we fall back to dev

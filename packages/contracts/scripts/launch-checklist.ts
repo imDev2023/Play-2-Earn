@@ -9,6 +9,7 @@ import { revertsWith } from "./lib/revert-matching";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead } from "./lib/relayer-core";
 import { MAX_SUPPLY, allocations } from "./lib/genesis";
+import { isLocalNetwork } from "./lib/local-network";
 
 /**
  * The launch-checklist dry run (#26, spec §10 / §11).
@@ -50,7 +51,7 @@ function check(name: string, passed: boolean, detail: string): void {
 }
 
 async function main() {
-  const isLocal = network.name === "localhost" || network.name === "hardhat";
+  const isLocal = isLocalNetwork(network.name);
   const deployment = JSON.parse(
     readFileSync(join(__dirname, "..", "deployments", `${network.name}.json`), "utf8"),
   );

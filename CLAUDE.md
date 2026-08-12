@@ -30,15 +30,29 @@ Editing a `.sol` file breaks source verification for that deployment - the whole
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
 **That debt is owed four times over**, which is the argument for paying it once rather than per change.
-Four *changes* from three PRs - count changes, not PR numbers: PR #48 repacked `RushoodGame`'s storage; PR #54 moved `evmVersion` to `cancun` **and** added `Treasury.GameSet` (that is two); PR #55 packed the five economic parameters into one slot (issue #47 - the issue number is not the PR number, and an earlier draft of this paragraph conflated them).
+Four *changes* from three PRs - count changes, not PR numbers: PR #48 repacked `RushoodGame`'s storage; PR #54 moved `evmVersion` to `cancun` **and** added `Treasury.GameSet` (that is two); PR #55 packed the five economic parameters into one slot, closing the second half of **issue** #47 (whose number is not its PR's, a conflation this paragraph has made once already).
+Keep the `PR ` and `issue` prefixes here rather than tidying them away - a bare number is the conflation this very sentence warns about, and a round of review has already had to put them back once.
 The deployed 46630 bytecode matches the tree on none of the four.
+Issue #47 stays open until the redeploy: its last acceptance criterion is the republished address list, which is the redeploy itself.
 
 **Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
-PR #48 was first and is still the sharpest: it reordered the `bets()` tuple, which is the *silent* kind of break (see the positional-decode trap below). #54's event is additive. #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
+PR #48 was first and is still the sharpest: it reordered the `bets()` tuple, which is the *silent* kind of break (see the positional-decode trap below).
+PR #54's event is additive.
+PR #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
 
-Two things that paragraph got wrong before it got right, both worth keeping:
-**Count the constants, not just the variables** - `public constant` emits a getter too, so the four `DEFAULT_*` seeds narrowed alongside the five variables, and the first draft missed all four.
-And it credited `abi-matches-artifact.test.ts` with catching that, which it could not: those four were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**. All ten are declared now.
+**Count the constants, not just the variables** - `public constant` emits a getter, so the nine are **five constants and four variables**, not the other way round.
+The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`, and the variables are `edgeNum`, `edgeDen`, `solvencyCapDen` and `burnRateBps`.
+Both near-misses are worth naming: `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`, and `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
+Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
+`abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
+All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`.
+
+**The deploy tooling itself is proven against the post-#55 tree.**
+A localhost rehearsal on 2026-08-12 ran `deploy-launch` then `launch-checklist` to **23/23**, and a raw slot read off the deployed game confirmed the packed layout landed.
+What a rehearsal cannot cover is the publish half: `verify-and-publish.ts` refuses to run on a local node by design, so the manual Blockscout step stays the untested part of the redeploy.
+
+**Nothing in this repo imports `dotenv`.**
+`packages/contracts/.env` is never loaded automatically, so every variable the real run needs must be exported into the shell by hand, or `requireEnv` throws and the fallbacks silently apply where they exist.
 
 **The `uint56` width is load-bearing and must not be "tidied" narrower.**
 abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the admin console reads these through `at<bigint>`, which **casts rather than infers**.
@@ -92,9 +106,13 @@ If `agent-browser eval` starts returning `""`, check `get url` - the tab has gon
 **A commit that answers a review finding needs its own review.**
 The cadence is in `AGENTS.md` (on `main` since #52) and is not restated here; what belongs here is why it keeps being skipped.
 A fix closing a finding feels like the end of a review rather than the start of one, and it is written under the impression that the problem is already understood - the exact state in which a fix reproduces the bug it was meant to remove.
-Both `toBetView` revisions above were written that way.
-Size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
-**#55 ran four rounds and every one found something real**, including two factual errors written into *this file* by the round before it. Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
+Both `toBetView` revisions above were written that way, and size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
+**PR #55 and PR #56 each ran round after round, and every round of both found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
+That includes factual errors written into *this file*, and, separately, one written into `hardhat.config.ts` - into the very comment the round before had just corrected elsewhere.
+Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
+The sharpest evidence: a fix here rewrote one line so a leading `#47` would stop rendering as an H1 heading, then opened another line in the same commit with `#56`, reintroducing the hazard it had just fixed.
+**When a claim appears in two files, fixing one of them is the default failure**, and naming the trap in a commit message does not stop you doing it in that same commit.
+**Verify a finding before you write it down**, including one a review sub-agent hands you: a report's "one line below its own fix" was seventy-five lines out, and went in unchecked because every round before it had been right.
 
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is, and only for the commit the remote actually has - a branch ahead of its remote makes even that stale, which is the sharper form of the same trap.
@@ -186,7 +204,22 @@ Note that `ci.yml`'s own Lint step is the root `npm run lint`, which fans out to
 
 **Check for path collisions before adding a file while another PR is in review** with `git diff main...<other-branch> --stat`. An ABI-order pin once landed at exactly the path #48 was already creating.
 
-**Ports.** Never use 3000 or 3100; other projects bind them.
+**`--network localhost` means whoever answers on 8545, unless the config says otherwise.**
+Hardhat supplies a built-in `localhost` network when none is declared, and every deploy script here is hardcoded to that flag.
+The rehearsal found 8545 held by another project's `anvil` forking BNB testnet, and `deploy-launch.ts` would have minted the genesis allocation into it without a word.
+PR #56 declares `localhost` with `chainId: Number(LOCAL_CHAIN_ID)`, which is `31337n` in `scripts/lib/local-network.ts` - grep the constant, not the literal, because the literal does not appear in the config.
+That makes Hardhat's own `ChainIdValidatorProvider` reject a foreign node on the first request, which is wider than any hand-placed check because it covers `hardhat test` and `hardhat console` too.
+`LOCAL_RPC_PORT` moves the node and its clients off a busy port together.
+**"Wider" stops at Hardhat's edge**, and the boundary is the part worth remembering: anything building its own provider is untouched by this.
+`relayer-service.ts` is the live example, left unguarded on purpose because it requires `RELAYER_RPC_URL` with no default and so has no silent-fallback hazard of this kind.
+It proves *which chain* answered, not what state it holds: a forked node still reports 31337.
+
+**The durable lesson from that review: a guard whose argument is fetched through the thing it guards can never run.**
+The first version called `assertLocalDevChain(network.name, (await ethers.provider.getNetwork()).chainId)` at six sites.
+The validator threw while that argument was still being evaluated, so the assert was never entered - and the stack trace pointed at *the assert's own line*, which is exactly what made it look live.
+A guard that cannot execute is worse than none, because the next reader trusts it.
+
+**Ports.** Never use 3000 or 3100; other projects bind them, and 8545 is not reliably free either (see above).
 Confirm the title says RUSHOOD before trusting anything you see.
 A backgrounded `next dev` exits the moment its stdin hits EOF; hold it open with `tail -f /dev/null | PORT=<port> npm run dev -- --port <port>`.
 

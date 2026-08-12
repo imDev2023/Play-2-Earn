@@ -1,4 +1,5 @@
 import { ethers, network } from "hardhat";
+import { isLocalNetwork } from "./lib/local-network";
 
 /**
  * Deploy the RUSHOOD (RUSH) token.
@@ -13,7 +14,7 @@ import { ethers, network } from "hardhat";
  */
 async function main() {
   const [deployer] = await ethers.getSigners();
-  const isLocal = network.name === "hardhat" || network.name === "localhost";
+  const isLocal = isLocalNetwork(network.name);
 
   const distributor = process.env.DISTRIBUTOR_ADDRESS ?? (isLocal ? deployer.address : "");
   if (!distributor) {

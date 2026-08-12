@@ -200,9 +200,12 @@ export const GAME_ABI = [
   },
   // The seed constants and the packing ceiling. Nothing in the app reads these yet; they
   // are declared so `abi-matches-artifact.test.ts` covers the whole economic surface
-  // rather than the half the console happens to call. #47 narrowed the four DEFAULT_*
-  // getters along with the effective values, and the guard did not notice because a
-  // getter absent from this file is a getter the guard cannot check.
+  // rather than the half the console happens to call. PR #55 (for issue #47 - the two
+  // numbers are not interchangeable) narrowed nine getters: five constants, being the four
+  // DEFAULT_* seeds below plus MAX_BURN_RATE_BPS above, and the four effective values.
+  // Not `economicsGovernable`, which sits in the same packed block but is a bool. The
+  // guard did not notice because a getter absent from this file is a getter it cannot
+  // check.
   {
     type: "function",
     name: "DEFAULT_EDGE_NUM",
