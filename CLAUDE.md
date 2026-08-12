@@ -110,9 +110,9 @@ Both `toBetView` revisions above were written that way, and size is not a proxy 
 **PR #55 and PR #56 each ran round after round, and every round of both found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
 That includes factual errors written into *this file*, and, separately, one written into `hardhat.config.ts` - into the very comment the round before had just corrected elsewhere.
 Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
-The sharpest evidence: a `CLAUDE.md`-only fix moved a line off column zero so a leading `#47` would stop rendering as an H1 heading, and opened its very next added line with `#56`.
-One line below its own fix, and only a round over the fix caught it.
+The sharpest evidence: a fix here rewrote one line so a leading `#47` would stop rendering as an H1 heading, then opened another line in the same commit with `#56`, reintroducing the hazard it had just fixed.
 **When a claim appears in two files, fixing one of them is the default failure**, and naming the trap in a commit message does not stop you doing it in that same commit.
+**Verify a finding before you write it down**, including one a review sub-agent hands you: "one line below its own fix" was repeated into this file and two commit messages before anyone checked, and the two lines were seventy-five apart in different sections.
 
 **A PR body claiming a green suite is not evidence.**
 `gh pr checks <n>` is, and only for the commit the remote actually has - a branch ahead of its remote makes even that stale, which is the sharper form of the same trap.
