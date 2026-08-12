@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ethers, network } from "hardhat";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead, settleNextBet, shouldRotate } from "./lib/relayer-core";
+import { isLocalNetwork } from "./lib/local-network";
 
 /**
  * Local relayer for the game.
@@ -25,7 +26,7 @@ import { epochChain, roundForHead, settleNextBet, shouldRotate } from "./lib/rel
  * For anything that is not a local node, run `scripts/relayer-service.ts` instead.
  */
 const MASTER_SEED = process.env.RELAYER_SEED ?? DEFAULT_MASTER_SEED;
-if (MASTER_SEED === DEFAULT_MASTER_SEED && network.name !== "localhost" && network.name !== "hardhat") {
+if (MASTER_SEED === DEFAULT_MASTER_SEED && !isLocalNetwork(network.name)) {
   throw new Error(
     `RELAYER_SEED is unset on "${network.name}", so the committed dev seed would be used. ` +
       "It is public: every future roll would be predictable in advance. Set a secret seed, " +

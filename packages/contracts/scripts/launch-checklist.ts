@@ -9,6 +9,7 @@ import { revertsWith } from "./lib/revert-matching";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead } from "./lib/relayer-core";
 import { MAX_SUPPLY, allocations } from "./lib/genesis";
+import { assertLocalDevChain, isLocalNetwork } from "./lib/local-network";
 
 /**
  * The launch-checklist dry run (#26, spec §10 / §11).
@@ -50,7 +51,11 @@ function check(name: string, passed: boolean, detail: string): void {
 }
 
 async function main() {
-  const isLocal = network.name === "localhost" || network.name === "hardhat";
+  const isLocal = isLocalNetwork(network.name);
+  // The checklist places and settles real bets, and locally it also winds the clock
+  // forward past SETTLE_TIMEOUT. Neither belongs on a chain that only looks local.
+  assertLocalDevChain(network.name, (await ethers.provider.getNetwork()).chainId);
+
   const deployment = JSON.parse(
     readFileSync(join(__dirname, "..", "deployments", `${network.name}.json`), "utf8"),
   );

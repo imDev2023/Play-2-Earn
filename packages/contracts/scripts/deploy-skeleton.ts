@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ethers, network } from "hardhat";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain } from "./lib/relayer-core";
+import { assertLocalDevChain } from "./lib/local-network";
 
 /**
  * Deploy the walking-skeleton stack (RUSH + Treasury + RushoodGame) to a local chain,
@@ -25,6 +26,10 @@ const GOVERNANCE_SAFE = process.env.GOVERNANCE_SAFE;
 const TIMELOCK_MIN_DELAY = BigInt(process.env.TIMELOCK_MIN_DELAY ?? 2 * 24 * 60 * 60); // 2 days
 
 async function main() {
+  // This stack funds a dev player from the deployer and hands the game a dev seed, so it
+  // is only ever meant for a throwaway chain. Check that is where it landed.
+  assertLocalDevChain(network.name, (await ethers.provider.getNetwork()).chainId);
+
   const signers = await ethers.getSigners();
   const [deployer, player, relayer] = signers;
   // Epoch 0 chain; the relayer advances epochs as it rotates.
