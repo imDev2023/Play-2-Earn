@@ -29,9 +29,11 @@ import {Treasury} from "./Treasury.sol";
 ///      - Tier N is a 1-in-N shot: win when `keccak256(reveal, clientSeed, betId) % N == 0`
 ///        (see `outcomeOf`), so P(win) = 1/N. The winning payout is `0.95 * N * stake`, giving an
 ///        expected return of `(1/N) * 0.95 * N = 0.95` on every tier — a flat 5% edge.
-///      - `maxPayout = 1% of the treasury balance`. The per-tier cap
+///      - `maxPayout = 1% of the treasury balance` as seeded, and never worse than 5%:
+///        governance may loosen the cap but `MIN_SOLVENCY_CAP_DEN` floors it (#57). The
+///        per-tier cap
 ///        `maxBet(tier) = maxPayout / multiplier` guarantees any single win costs at
-///        most 1% of the pool, and because the stake is added to the treasury on
+///        most that fraction of the pool, and because the stake is added to the treasury on
 ///        `placeBet` (and no other bet can interleave — one bet is active at a time),
 ///        a placed bet's payout is *always* affordable at settle time. This resolves
 ///        the underfunded-treasury brick left open by the skeleton.
@@ -124,6 +126,21 @@ contract RushoodGame is Pausable {
     ///      at ~7.2e16 it constrains nothing a real edge or cap would use. Tightening the
     ///      economics is governance policy and is decided separately from storage layout.
     uint256 public constant MAX_ECONOMIC_RATIO = type(uint56).max;
+
+    /// @notice Floor for `solvencyCapDen`, so no single win can take more than 5% of the
+    ///         treasury however governance tunes the cap.
+    /// @dev The mirror image of `MAX_ECONOMIC_RATIO` above and, unlike it, **deliberately
+    ///      an economic judgement** - do not read the two as the same kind of constant.
+    ///      `maxPayout` is `treasuryBalance() / solvencyCapDen`, so a *small* denominator
+    ///      is the dangerous one and the ceiling above guards the safe direction only.
+    ///      Until #57 nothing guarded this one: `setSolvencyCap(1)` was accepted and set
+    ///      maxPayout to the entire treasury, so one win could take the bankroll.
+    ///
+    ///      20 is a 5% ceiling, not section 5's 1%. The seeded `DEFAULT_SOLVENCY_CAP_DEN`
+    ///      is 100 and this bounds only how far governance may loosen from it, which is
+    ///      the trade the spec now records. A floor at 100 would have pinned the cap
+    ///      permanently and removed the point of `economicsGovernable`.
+    uint256 public constant MIN_SOLVENCY_CAP_DEN = 20;
 
     /// @notice The RUSH token staked and paid out.
     IERC20 public immutable token;
@@ -645,18 +662,21 @@ contract RushoodGame is Pausable {
     }
 
     /// @notice Set the solvency cap denominator (a win pays at most 1/den of the pool).
-    /// @dev Requires `den >= 1`; a larger denominator is a tighter (safer) cap; only
-    ///      settable between bets (see `whenBetInactive`). Bounded above by
-    ///      `MAX_ECONOMIC_RATIO` so the value is rejected rather than truncated into the
-    ///      packed storage - truncation could wrap a deliberately tight cap into a loose
-    ///      one, which is the dangerous direction.
+    /// @dev Bounded at both ends, and the two bounds exist for unrelated reasons.
+    ///      Above, `MAX_ECONOMIC_RATIO` is a storage bound: the value is rejected rather
+    ///      than truncated into the packed slot, since truncation could wrap a
+    ///      deliberately tight cap into a loose one.
+    ///      Below, `MIN_SOLVENCY_CAP_DEN` is an economic bound (#57): a larger denominator
+    ///      is a tighter, safer cap, so the *small* end is where the risk lives, and
+    ///      `den == 1` would have set maxPayout to the whole treasury.
+    ///      Only settable between bets, see `whenBetInactive`.
     function setSolvencyCap(uint256 den)
         external
         onlyGovernance
         whenEconomicsGovernable
         whenBetInactive
     {
-        if (den == 0 || den > MAX_ECONOMIC_RATIO) revert InvalidEconomics();
+        if (den < MIN_SOLVENCY_CAP_DEN || den > MAX_ECONOMIC_RATIO) revert InvalidEconomics();
         solvencyCapDen = uint56(den);
         emit SolvencyCapUpdated(den);
     }

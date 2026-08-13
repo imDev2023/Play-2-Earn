@@ -21,10 +21,16 @@ import {RushoodGame} from "../RushoodGame.sol";
 ///
 /// It is genuinely falsifiable rather than tautological, and it is worth being exact
 /// about where that falsifiability comes from, because an earlier version of this comment
-/// was not. `edgeNum`, `edgeDen` and `solvencyCapDen` are NOT reachable by this campaign:
-/// their setters carry `whenEconomicsGovernable`, `economicsGovernable` starts false, and
-/// nothing here flips it. Of the four economic knobs only `setBurnRate` is fuzzable, and
-/// it is gated to `whenBetInactive` besides.
+/// was not. `edgeNum` and `edgeDen` are NOT reachable by this campaign: their setters
+/// carry `whenEconomicsGovernable` and nothing here flips it for them.
+///
+/// `solvencyCapDen` WAS in that list and is not any more (#57). While it was, the first
+/// assertion in `invariant_payoutWithinCap` compared 1% against 1% on every call: the
+/// denominator was pinned at its seeded 100 for the whole run, so the assertion about it
+/// could not fail whatever the contract did. That is this file's own recorded trap - a
+/// bounded handler decides which states the campaign can reach, and the assertion about
+/// the state you folded away is the one that cannot fail. `handleSetSolvencyCap` and
+/// `handleSetSolvencyCapBelowFloor` below make it reachable in both directions.
 ///
 /// What actually makes the campaign bite is `burnTreasuryProfit`, the one path that
 /// destroys treasury value outright, driven to its extreme by `handleBurnAllProfit`. That
@@ -44,11 +50,19 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
 
     /// @dev The spec's own numbers, restated here so the properties are anchored to
     ///      docs/spec/RUSHOOD-game-spec.md rather than to the contract they are checking.
-    ///      §4 locks a flat 5% edge, so the multiplier is `0.95 * N`. §5 locks
-    ///      "maxPayout <= ~1% of the Treasury's current RUSH balance".
+    ///      §4 locks a flat 5% edge, so the multiplier is `0.95 * N`.
     uint256 private constant SPEC_EDGE_NUM = 95;
     uint256 private constant SPEC_EDGE_DEN = 100;
+
+    /// @dev §5's seeded default: maxPayout is 1% of the treasury at deployment.
     uint256 private constant SPEC_SOLVENCY_CAP_DEN = 100;
+
+    /// @dev §5's governance ceiling (#57): the cap may be loosened, but no further than
+    ///      5% of the treasury. This, not the 1% above, is the bound that has to hold
+    ///      across every state the campaign can reach, because loosening is a legal
+    ///      governance action. Asserting the 1% here would fail on a lawful `setSolvencyCap`
+    ///      rather than on a defect.
+    uint256 private constant SPEC_MIN_SOLVENCY_CAP_DEN = 20;
 
     Rushood internal immutable rush;
     Treasury internal immutable treasuryVault;
@@ -182,6 +196,41 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
         game.setBurnRate(bps % (game.MAX_BURN_RATE_BPS() + 1));
     }
 
+    /// @dev Lawful governance loosening and tightening of the solvency cap (#57).
+    ///
+    /// Folded into `[MIN_SOLVENCY_CAP_DEN, 1000]`, and both ends of that fold are
+    /// deliberate. The bottom is the floor itself, so the loosest cap governance may
+    /// legally set is reached rather than approached - that is the state
+    /// `invariant_payoutWithinCap` is tightest against. The top is 1000 (a 0.1% cap)
+    /// rather than `MAX_ECONOMIC_RATIO`, because a denominator near 2^56 drives `maxBet`
+    /// below `minBet` and every subsequent `handlePlaceBet` becomes a no-op, which would
+    /// starve the campaign of the play it exists to explore. Folding away the *tight* end
+    /// is safe in a way folding away the loose end is not: an over-tight cap cannot
+    /// breach a solvency bound, it can only refuse bets.
+    function handleSetSolvencyCap(uint256 denSeed) public {
+        if (game.activeBetId() != 0) return; // whenBetInactive; would revert and cost a call
+        if (!game.economicsGovernable()) game.setEconomicsGovernable(true);
+
+        uint256 floor = game.MIN_SOLVENCY_CAP_DEN();
+        game.setSolvencyCap(floor + (denSeed % (1_000 - floor + 1)));
+    }
+
+    /// @dev The extreme, as its own zero-argument call, for the same reason as
+    /// `handlePlaceOverCapBet` and `handleBurnAllProfit`: a folded input can never reach
+    /// the value the guard exists to reject, so the assertion about it cannot fail.
+    ///
+    /// `den == 1` is the case #57 was opened on - it sets `maxPayout` to the entire
+    /// treasury, so one win takes the bankroll. While `MIN_SOLVENCY_CAP_DEN` is intact
+    /// this reverts and costs a single call. Delete that bound and the cap lands at 1,
+    /// `maxPayout` becomes the whole balance, and `invariant_payoutWithinCap` fires on the
+    /// next check. That is the plant this handler has to be verified against.
+    function handleSetSolvencyCapBelowFloor() public {
+        if (game.activeBetId() != 0) return;
+        if (!game.economicsGovernable()) game.setEconomicsGovernable(true);
+
+        game.setSolvencyCap(1);
+    }
+
     /// @dev The sharpest edge in the system, and the reason this campaign exists.
     ///
     /// `burnTreasuryProfit` is the one path that destroys treasury value outright. The
@@ -304,14 +353,26 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///         catches is a marginal breach: at `maxBet + 1` the stake lifts a live
     ///         `maxPayout()` by roughly `maxBet / 100`, which dwarfs the overage and
     ///         swallows it. Both are needed, for different sizes of the same bug.
-    ///      3. `maxPayout` stays within the spec's 1%. This catches a governance action
-    ///         that loosens `solvencyCapDen`, which the setter currently permits down to
-    ///         1 - a single win draining the pool. Unreachable from this campaign today
-    ///         (see the header note on `whenEconomicsGovernable`), so it stands as the
-    ///         assertion that would fire if that ever changed. Verified by planting
-    ///         `DEFAULT_SOLVENCY_CAP_DEN = 50`, which fails it.
+    ///      3. `maxPayout` stays within the spec's 5% governance ceiling. This catches a
+    ///         governance action that loosens `solvencyCapDen` too far - at `den == 1` a
+    ///         single win drains the pool, which is what #57 was opened on.
+    ///         **It asserts 5%, not §5's seeded 1%, and the difference is not a
+    ///         weakening.** Loosening within the permitted band is lawful, so an assertion
+    ///         at 1% would fire on a legal `setSolvencyCap` rather than on a defect. The
+    ///         1% is a default, pinned separately below; 5% is the bound that must hold
+    ///         across every reachable state.
+    ///         Until #57 this assertion could not fail at all: nothing flipped
+    ///         `economicsGovernable`, so `solvencyCapDen` sat at 100 for whole runs and
+    ///         the check compared 1% against 1%. `handleSetSolvencyCapBelowFloor` is what
+    ///         makes it bite, and the plant to verify against is deleting
+    ///         `MIN_SOLVENCY_CAP_DEN` from `setSolvencyCap`.
     ///         Both sides do read `treasuryBalance()`, so this cannot catch that number
     ///         itself being wrong - it catches the ratio, which is what §5 locks.
+    ///      4. The shipped default still is the spec's 1%. A constant against a literal,
+    ///         which is a valid anchor precisely because the literal comes from the spec
+    ///         and not from the contract. It cannot fail mid-run, and it is not meant to:
+    ///         it fails at compile-to-campaign time if someone retunes the seeded default
+    ///         without amending §5.
     ///
     /// The `invariant_` prefix is the vocabulary the property mixins already use -
     /// `invariant_solvency` and `invariant_conservation` are named the same way, and the
@@ -321,8 +382,12 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     // solhint-disable-next-line func-name-mixedcase
     function invariant_payoutWithinCap() public view {
         _check(
-            game.maxPayout() <= game.treasuryBalance() / SPEC_SOLVENCY_CAP_DEN,
-            "solvency cap: maxPayout exceeds the spec's 1% of treasury"
+            game.maxPayout() <= game.treasuryBalance() / SPEC_MIN_SOLVENCY_CAP_DEN,
+            "solvency cap: maxPayout exceeds the spec's 5% governance ceiling"
+        );
+        _check(
+            game.DEFAULT_SOLVENCY_CAP_DEN() == SPEC_SOLVENCY_CAP_DEN,
+            "solvency cap: the seeded default no longer matches the spec's 1%"
         );
 
         if (game.activeBetId() == 0 || openStake == 0) return;
