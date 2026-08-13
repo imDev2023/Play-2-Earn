@@ -16,6 +16,18 @@ git -C "<repo>" status --short          # expect no modified tracked files
 `deployments/` is gitignored, and `deploy-launch` overwrites `deployments/robinhoodTestnet.json` in place.
 A copy of the pre-run state is in this session's scratchpad; make your own if you are running later.
 
+## Rehearsal status
+
+Re-run on **2026-08-13** against the post-#58 tree, on a local node at `LOCAL_RPC_PORT=8548` because another project held 8545.
+
+- `deploy-launch` clean, and the unlocked-remainder warning fired as it should.
+- `launch-checklist` **23/23**.
+- A raw slot read off the deployed game confirmed the packed layout survives #58: `guardian` alone in slot 1, `minBet` and `treasuryFloor` full-width in slots 2 and 3 forcing a fresh boundary, and the whole economic block in slot 4 as 29 bytes (`economicsGovernable=false`, `edgeNum=95`, `edgeDen=100`, `solvencyCapDen=100`, `burnRateBps=250`).
+- `MIN_SOLVENCY_CAP_DEN` reads 20 and `maxPayout / treasuryBalance` is exactly 1.00%, so #58's floor is live and the seeded default is unchanged.
+
+So steps 1 and 2 are proven on the exact tree being frozen.
+Step 3 is not, and cannot be.
+
 ## Why you run these, and not the agent
 
 Your global settings hard-deny `Bash(npx hardhat run:*)`, `hardhat deploy:*` and `hardhat verify:*`.
