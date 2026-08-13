@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { artifacts, ethers, network } from "hardhat";
 import { CANONICAL_V3_POSITION_MANAGERS } from "./lib/uniswap-v3-stack";
 import { type VerificationRequest, verifyContract } from "./lib/blockscout-verify";
+import { type ChecklistRecord, checklistLine } from "./lib/checklist-record";
 import { isLocalNetwork } from "./lib/local-network";
 
 /**
@@ -187,21 +188,15 @@ async function buildSource(target: VerifyTarget): Promise<VerificationRequest> {
  *
  * Absence is reported rather than omitted: a page that simply leaves the section out
  * reads as "fine" to someone skimming, when the honest statement is "unknown".
+ *
+ * The record is joined to the deployment by game address rather than by filename, because
+ * the filename is per network and a redeploy does not change the network. See
+ * `lib/checklist-record.ts` for the run that published a previous stack's result under
+ * six new addresses.
  */
-function checklistLine(): string {
+function readChecklistRecord(): ChecklistRecord | null {
   const path = join(__dirname, "..", "deployments", `checklist-${network.name}.json`);
-  if (!existsSync(path)) {
-    return "**Not run against this deployment.** Run `scripts/launch-checklist.ts` - until it\npasses, nothing here has been exercised end to end.";
-  }
-
-  const run = JSON.parse(readFileSync(path, "utf8"));
-  const when = String(run.ranAt ?? "").slice(0, 10);
-  if (run.passed === run.total) {
-    return `**${run.passed}/${run.total} checks passed** (${when}) - play across all six tiers, the
-public fairness verifier, bet caps, guardian pause/unpause, and the relayer-down refund
-after a real \`SETTLE_TIMEOUT\` wait.`;
-  }
-  return `**${run.passed}/${run.total} checks passed** (${when}). FAILED: ${(run.failures ?? []).join(", ")}`;
+  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 }
 
 /**
@@ -327,7 +322,7 @@ open-source verifier in \`packages/verifier\`. The in-app panel is at \`/verify\
 
 ## Launch checklist
 
-${checklistLine()}
+${checklistLine(readChecklistRecord(), deployment.game)}
 
 ## Status
 

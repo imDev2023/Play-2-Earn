@@ -308,12 +308,18 @@ async function main() {
   // Record the outcome so the published address list can state it. Without this the
   // only evidence a checklist ever ran is a terminal scrollback nobody else can see -
   // and "23/23 on testnet" is an acceptance criterion someone should be able to check.
+  //
+  // `game` is what ties the result to a deployment. The filename is per network, and a
+  // redeploy does not change the network, so without this the previous stack's record
+  // sits exactly where a current one would - and the 2026-08-13 redeploy published one.
+  // `chainId` cannot stand in for it: it is identical across every redeploy.
   writeFileSync(
     join(__dirname, "..", "deployments", `checklist-${network.name}.json`),
     JSON.stringify(
       {
         network: network.name,
         chainId: deployment.chainId,
+        game: deployment.game,
         passed: results.length - failed.length,
         total: results.length,
         ranAt: new Date().toISOString(),
