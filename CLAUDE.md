@@ -50,7 +50,8 @@ The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`, 
 Both near-misses are worth naming: `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`, and `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
 Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
 `abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
-All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`, and #58's `MIN_SOLVENCY_CAP_DEN` makes eleven economic getters in `GAME_ABI`, so count the ten by name rather than by grepping the block.
+All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO` - and PR #58 declared `MIN_SOLVENCY_CAP_DEN` beside them.
+Count those ten by the names above, not by counting getters in `GAME_ABI`: they are interleaved with the rest rather than sitting in a block, and "economic" has no edge there that a grep could find.
 
 **The deploy tooling itself is proven against the post-#55 tree.**
 A localhost rehearsal on 2026-08-12 ran `deploy-launch` then `launch-checklist` to **23/23**, and a raw slot read off the deployed game confirmed the packed layout landed.
@@ -116,6 +117,10 @@ Both `toBetView` revisions above were written that way, and size is not a proxy 
 **Every round on PR #55, #56 and #58 found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
 Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
 The sharpest evidence: a fix here rewrote one line so a leading `#47` would stop rendering as an H1 heading, then opened another line in the same commit with `#56`, reintroducing the hazard it had just fixed.
+**That hazard is not real, and finding that out took one command.**
+GFM needs a space after the `#` run, so `gh api -X POST /markdown -f mode=gfm -f text='#47 stays open'` returns a `<p>`, not an `<h1>`; only legacy Markdown.pl-family renderers promote it.
+The `PR ` prefix is still worth keeping as a house style, because a bare number is the PR/issue conflation this file warns about twice - but keep it for that reason, not for a rendering bug that was never checked against a renderer.
+It survived several rounds of review because it reads like exactly the sort of thing that would be true.
 **When a claim appears in two files, fixing one of them is the default failure**, and naming the trap in a commit message does not stop you doing it in that same commit.
 **Verify a finding before you write it down**, including one a review sub-agent hands you: a report's "one line below its own fix" was seventy-five lines out, and went in unchecked because every round before it had been right.
 
@@ -190,7 +195,7 @@ A folded input silently restricts the reachable state space, and the assertion a
 
 A third time, and the widest form: **a parameter no handler writes is pinned for the whole run, so an assertion about it compares a constant to itself.**
 `solvencyCapDen` sat at its seeded 100 because nothing flipped `economicsGovernable`, so `invariant_payoutWithinCap`'s cap assertion compared 1% against 1% on every call and could not fail whatever the contract did.
-PR #58's two handlers fix it, and the `PR ` prefix is load-bearing: split onto its own line, a bare `#58` at column zero would render as an H1.
+PR #58's two handlers fix it.
 The harness header names which parameters are unreachable *and why*; when you make one reachable, correct that sentence, because the reason can change without the conclusion changing (the edge is still unreachable, but now only because no handler calls `setEdge`, not because the flag is off).
 Watch the fold's own arithmetic: `medusa.json` sets `failOnArithmeticUnderflow: false`, so a handler whose range inverts reverts on every call and the campaign goes green having fuzzed nothing.
 
