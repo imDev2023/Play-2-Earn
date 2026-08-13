@@ -9,9 +9,15 @@ Every command here is run **by the owner**, with the `!` prefix, for the reason 
 The tree is the thing being frozen, so prove it is the tree you think it is.
 
 ```
-git -C "<repo>" log --oneline -1        # expect the #58 merge commit
+git -C "<repo>" log --oneline -1        # expect the #60 merge commit or later
 git -C "<repo>" status --short          # expect no modified tracked files
+git -C "<repo>" ls-files --error-unmatch \
+  packages/contracts/scripts/lib/checklist-record.ts
 ```
+
+The last one is the check that matters, and it is a file test rather than a commit test because a commit name is only as good as the reader's memory of what was in it.
+Without that module the checklist writes no stamp and step 3 falls back to joining on a filename, which is how a previous run credited a 23/23 to the contracts it had just replaced.
+`#58` is the last of the five `.sol` changes and is what freezes the source; `#60` is what makes step 3 able to tell one deployment's checklist from another's, and you want both.
 
 `deployments/` is gitignored, and `deploy-launch` overwrites `deployments/robinhoodTestnet.json` in place.
 A copy of the pre-run state is in this session's scratchpad; make your own if you are running later.
