@@ -322,7 +322,14 @@ open-source verifier in \`packages/verifier\`. The in-app panel is at \`/verify\
 
 ## Launch checklist
 
-${checklistLine(readChecklistRecord(), deployment.game)}
+${checklistLine(readChecklistRecord(), {
+    rush: deployment.rush,
+    treasury: deployment.treasury,
+    game: deployment.game,
+    vesting: deployment.vesting,
+    lpLock: deployment.lpLock,
+    timelock: deployment.timelock,
+  })}
 
 ## Status
 

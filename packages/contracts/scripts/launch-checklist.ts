@@ -10,6 +10,7 @@ import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "./lib/hashchain";
 import { epochChain, roundForHead } from "./lib/relayer-core";
 import { MAX_SUPPLY, allocations } from "./lib/genesis";
 import { isLocalNetwork } from "./lib/local-network";
+import { buildChecklistRecord } from "./lib/checklist-record";
 
 /**
  * The launch-checklist dry run (#26, spec §10 / §11).
@@ -309,22 +310,28 @@ async function main() {
   // only evidence a checklist ever ran is a terminal scrollback nobody else can see -
   // and "23/23 on testnet" is an acceptance criterion someone should be able to check.
   //
-  // `game` is what ties the result to a deployment. The filename is per network, and a
-  // redeploy does not change the network, so without this the previous stack's record
-  // sits exactly where a current one would - and the 2026-08-13 redeploy published one.
-  // `chainId` cannot stand in for it: it is identical across every redeploy.
+  // Built through `buildChecklistRecord` rather than as a literal here, because the
+  // stack it stamps is what the publisher joins on. A field dropped from a literal in a
+  // script is invisible to every test; dropped from the builder it is not, and the first
+  // version of this fix shipped with exactly that half untested.
   writeFileSync(
     join(__dirname, "..", "deployments", `checklist-${network.name}.json`),
     JSON.stringify(
-      {
+      buildChecklistRecord({
         network: network.name,
         chainId: deployment.chainId,
-        game: deployment.game,
+        stack: {
+          rush: deployment.rush,
+          treasury: deployment.treasury,
+          game: deployment.game,
+          vesting: deployment.vesting,
+          lpLock: deployment.lpLock,
+          timelock: deployment.timelock,
+        },
         passed: results.length - failed.length,
         total: results.length,
-        ranAt: new Date().toISOString(),
         failures: failed.map((f) => f.name),
-      },
+      }),
       null,
       2,
     ) + "\n",
