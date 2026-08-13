@@ -241,6 +241,17 @@ export const GAME_ABI = [
     inputs: [],
     outputs: [{ type: "uint256" }],
   },
+  // The solvency cap's lower bound (#57). Declared for the same reason as the seeds
+  // above: the guard is only ever as wide as the ABI written down here, and this one
+  // bounds how far governance can loosen a payout cap, so it is exactly the sort of
+  // getter that should not be able to change width unnoticed.
+  {
+    type: "function",
+    name: "MIN_SOLVENCY_CAP_DEN",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
   {
     type: "function",
     name: "paused",

@@ -7,6 +7,7 @@ import {
   describeAdminCall,
   encodeAdminOp,
   MAX_ECONOMIC_RATIO,
+  MIN_SOLVENCY_CAP_DEN,
   parseAdminOp,
   preflightAdminOp,
 } from "../lib/admin/ops";
@@ -113,6 +114,31 @@ describe("parseAdminOp", () => {
     // The ceiling itself is still accepted, so the bound rejects only what cannot fit.
     const atCeiling = parseAdminOp("setSolvencyCap", { den: MAX_ECONOMIC_RATIO.toString() });
     assert.deepEqual(ok(atCeiling).args, [MAX_ECONOMIC_RATIO]);
+  });
+
+  it("rejects a solvency cap below MIN_SOLVENCY_CAP_DEN rather than queueing a doomed call", () => {
+    // #57 floored `setSolvencyCap`, so the contract reverts with InvalidEconomics below
+    // MIN_SOLVENCY_CAP_DEN. This bound matters more than the ceiling beside it: the
+    // ceiling rejects a value nobody would type, while the floor rejects the
+    // plausible-looking small denominators. `den: 1` is the case #57 was opened on, and
+    // before this bound the console would queue it, spend the whole timelock delay, and
+    // revert on execution.
+    assert.deepEqual(errorsFor(parseAdminOp("setSolvencyCap", { den: "1" })), ["den"]);
+    assert.deepEqual(
+      errorsFor(parseAdminOp("setSolvencyCap", { den: (MIN_SOLVENCY_CAP_DEN - 1n).toString() })),
+      ["den"],
+    );
+
+    // The floor itself is accepted, so the bound rejects only what the contract would.
+    const atFloor = parseAdminOp("setSolvencyCap", { den: MIN_SOLVENCY_CAP_DEN.toString() });
+    assert.deepEqual(ok(atFloor).args, [MIN_SOLVENCY_CAP_DEN]);
+
+    // The operator is told why, not just the number. A bare bound sends them looking for
+    // a typo when the answer is a policy the contract enforces.
+    const message = (
+      parseAdminOp("setSolvencyCap", { den: "1" }) as { errors: { message: string }[] }
+    ).errors[0].message;
+    assert.match(message, /5%|treasury/);
   });
 
   it("reads RUSH amounts as decimal token amounts, not raw wei", () => {

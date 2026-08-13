@@ -1,6 +1,6 @@
 # Web3 security review
 
-A pass over the repo against the references in `web3-security.md`:
+A pass over the repo against the references in the untracked `resources/web3-security.md`:
 SlowMist's Web3 Project Security Practice Requirements, the Consensys Diligence smart contract best practices, and the Alchemy overview.
 
 Reviewed **2026-08-04**.

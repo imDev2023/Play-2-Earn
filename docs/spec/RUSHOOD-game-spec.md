@@ -104,7 +104,10 @@ Because the game is **RUSH-banked**, house profits accrue **in RUSH**, so there 
 
 ### Solvency (locked requirement)
 - Seeded treasury = 45% of supply (§3).
-- **`maxPayout ≤ ~1% of the Treasury's current RUSH balance`** ⇒ no single win (even a 950× moonshot) can dent the bankroll.
+- **`maxPayout ≤ ~1% of the Treasury's current RUSH balance`** ⇒ no single win (even a 950× moonshot) can dent the bankroll. This is the **seeded default** (`DEFAULT_SOLVENCY_CAP_DEN = 100`).
+- **Governance may loosen the cap, but never past 5% of the treasury** (`MIN_SOLVENCY_CAP_DEN = 20`), and the contract enforces that floor. **[spec-resolved #57]**
+  - The 1% above is what the game ships with; 5% is the worst case reachable by any governance action. The distinction matters because the contract enforces the second, not the first, and an earlier version of this section read as though "locked" meant the 1% could never move at all while `setSolvencyCap` in fact accepted **any** denominator down to 1, i.e. a single win taking the entire treasury.
+  - A floor at 100 was considered and rejected: it would pin the cap permanently and remove the point of the `economicsGovernable` opt-in. The trade is that the guarantee is "no single win takes more than 5%", not "more than 1%".
 - `maxBet(tier) = maxPayout / multiplier`, recomputed as the treasury balance moves.
 - **Pool-depletion behavior:** below a governance-set treasury floor, reject bets whose potential payout exceeds the safe cap, and/or **pause** - never accept a bet the treasury can't cover.
 
@@ -154,7 +157,7 @@ Fresh Solidity (^0.8.24), Hardhat, OpenZeppelin. Suggested contracts:
 | **LP locker** | Locks the Uniswap LP position 1-2 yr | Timelock |
 | **Governance** | **Safe multisig** → **`TimelockController`** owns Treasury/Game/verifier; timelock gates sensitive params (caps, edge, tiers) | - |
 
-**Key invariants to test:** supply is fixed & monotonically non-increasing; `payout ≤ maxPayout ≤ 1% treasury`; a bet can always be `refund`ed after timeout; `settleBet` reverts unless the reveal matches the committed hash; only the Game can pull from the Treasury; sensitive setters are timelock-only.
+**Key invariants to test:** supply is fixed & monotonically non-increasing; `payout ≤ maxPayout`, with `maxPayout ≤ 1% treasury` as shipped and `≤ 5% treasury` as the bound no governance action can cross (§5); a bet can always be `refund`ed after timeout; `settleBet` reverts unless the reveal matches the committed hash; only the Game can pull from the Treasury; sensitive setters are timelock-only.
 
 ---
 

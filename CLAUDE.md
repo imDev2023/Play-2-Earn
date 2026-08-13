@@ -16,9 +16,8 @@ It deliberately does not restate what the linked files already say.
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, on `main` since #54 merged (2026-08-11). Public, so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, on `main` since #54 merged (2026-08-11). Public, so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of the untracked `resources/web3-security.md`, which is spent and no longer has a row of its own. |
 | `resources/01-robinhood-chain.md` | Untracked. Crawled platform facts for chain 4663: Arbitrum Nitro L2, ArbOS semantics, ERC-8056, the 48-hour feed gap, and the confirmation that **there is no L2 sequencer uptime feed on 4663** - which closes one of the profile's two `OPEN:` answers. |
-| `resources/web3-security.md` | Untracked, and now spent: all four links checked, nothing actionable left. |
 
 ## Deployment reality
 
@@ -29,23 +28,30 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
 It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
 
-**That debt is owed four times over**, which is the argument for paying it once rather than per change.
-Four *changes* from three PRs - count changes, not PR numbers: PR #48 repacked `RushoodGame`'s storage; PR #54 moved `evmVersion` to `cancun` **and** added `Treasury.GameSet` (that is two); PR #55 packed the five economic parameters into one slot, closing the second half of **issue** #47 (whose number is not its PR's, a conflation this paragraph has made once already).
+**That debt is owed five times over**, which is the argument for paying it once rather than per change.
+Five *changes* from four PRs - count changes, not PR numbers: PR #48 repacked `RushoodGame`'s storage; PR #54 moved `evmVersion` to `cancun` **and** added `Treasury.GameSet` (that is two); PR #55 packed the five economic parameters into one slot, closing the second half of **issue** #47 (whose number is not its PR's, a conflation this paragraph has made once already); PR #58 added `MIN_SOLVENCY_CAP_DEN` for **issue** #57.
 Keep the `PR ` and `issue` prefixes here rather than tidying them away - a bare number is the conflation this very sentence warns about, and a round of review has already had to put them back once.
-The deployed 46630 bytecode matches the tree on none of the four.
+The deployed 46630 bytecode matches the tree on none of the five.
 Issue #47 stays open until the redeploy: its last acceptance criterion is the republished address list, which is the redeploy itself.
 
-**Three of the four change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
+**#58 is the last `.sol` change, and that is what unblocks everything.**
+The redeploy freezes the source, and the source has to be frozen before an audit is worth commissioning, so the ordering is not a preference.
+Every other open item is TypeScript, CI or ops.
+Verify before trusting that: `git status` clean plus a scan for pending `.sol` work, not this sentence.
+
+**Four of the five change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
 PR #48 was first and is still the sharpest: it reordered the `bets()` tuple, which is the *silent* kind of break (see the positional-decode trap below).
 PR #54's event is additive.
 PR #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
+PR #58 adds `MIN_SOLVENCY_CAP_DEN`, also additive.
 
 **Count the constants, not just the variables** - `public constant` emits a getter, so the nine are **five constants and four variables**, not the other way round.
 The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`, and the variables are `edgeNum`, `edgeDen`, `solvencyCapDen` and `burnRateBps`.
 Both near-misses are worth naming: `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`, and `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
 Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
 `abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
-All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`.
+All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO` - and PR #58 declared `MIN_SOLVENCY_CAP_DEN` beside them.
+Count those ten by the names above, not by counting getters in `GAME_ABI`: they are interleaved with the rest rather than sitting in a block, and "economic" has no edge there that a grep could find.
 
 **The deploy tooling itself is proven against the post-#55 tree.**
 A localhost rehearsal on 2026-08-12 ran `deploy-launch` then `launch-checklist` to **23/23**, and a raw slot read off the deployed game confirmed the packed layout landed.
@@ -77,7 +83,8 @@ That suite now runs in CI as the `connected-e2e` job (#49 landed). It is the onl
 **The `bets()` tuple decodes positionally, so a reorder puts every field in its neighbour without throwing.**
 An address is still an address, and Typechain returns named tuples so contract tests pass whatever the order is.
 Any consumer derives its field order from the ABI and never hard-codes one; the guards are `packages/web/test/abi-matches-artifact.test.ts` (#53) and `toBetView` / `BetViewNamesMatchAbi` / `RawBet` in `lib/contracts.ts` (#51). Read those, not this paragraph.
-Three positional sites remain - `VerifyTool.tsx` and `useRelayerHealth.ts` twice. Migrate them onto `toBetView`.
+Three positional sites remain, at `packages/web/app/verify/VerifyTool.tsx` and `packages/web/lib/admin/useRelayerHealth.ts` twice, and want migrating onto `toBetView`.
+Both files had moved since this line was written and the old paths grepped to nothing, which is the argument for `grep -rn "bets("` over a path recorded here.
 
 **The durable lesson: this trap bit three times *inside the code written to prevent it*, and a fourth time during the merge that was supposed to end it.**
 `toBetView` shipped positional, then fixed the order but cast away the names. #53, the guard for exactly this, shipped ignoring `indexed`. Then #48's repack collided with #51's `hydrate`; git showed that conflict only because both sides happened to touch the same lines, and it would otherwise have merged clean and silently wrong.
@@ -107,10 +114,13 @@ If `agent-browser eval` starts returning `""`, check `get url` - the tab has gon
 The cadence is in `AGENTS.md` (on `main` since #52) and is not restated here; what belongs here is why it keeps being skipped.
 A fix closing a finding feels like the end of a review rather than the start of one, and it is written under the impression that the problem is already understood - the exact state in which a fix reproduces the bug it was meant to remove.
 Both `toBetView` revisions above were written that way, and size is not a proxy for risk: "it is small" is the reasoning that shipped #48 red and put the positional bug on #51's branch.
-**PR #55 and PR #56 each ran round after round, and every round of both found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
-That includes factual errors written into *this file*, and, separately, one written into `hardhat.config.ts` - into the very comment the round before had just corrected elsewhere.
+**Every round on PR #55, #56 and #58 found something real** - do not write a tally here, because it is stale the next time this rule is obeyed.
 Docs-only fix commits are not exempt; a wrong sentence here is worse than a wrong sentence anywhere else, because this is the file the next session trusts.
 The sharpest evidence: a fix here rewrote one line so a leading `#47` would stop rendering as an H1 heading, then opened another line in the same commit with `#56`, reintroducing the hazard it had just fixed.
+**That hazard is not real, and finding that out took one command.**
+GFM needs a space after the `#` run, so `gh api -X POST /markdown -f mode=gfm -f text='#47 stays open'` returns a `<p>`, not an `<h1>`; only legacy Markdown.pl-family renderers promote it.
+The `PR ` prefix is still worth keeping as a house style, because a bare number is the PR/issue conflation this file warns about twice - but keep it for that reason, not for a rendering bug that was never checked against a renderer.
+It survived several rounds of review because it reads like exactly the sort of thing that would be true.
 **When a claim appears in two files, fixing one of them is the default failure**, and naming the trap in a commit message does not stop you doing it in that same commit.
 **Verify a finding before you write it down**, including one a review sub-agent hands you: a report's "one line below its own fix" was seventy-five lines out, and went in unchecked because every round before it had been right.
 
@@ -158,6 +168,16 @@ Note `storageLayout` is not in this project's solc `outputSelection`, so `eth_ge
 Bound the setter in the same commit, and keep the bound a consequence of the layout (`MAX_ECONOMIC_RATIO` is `type(uint56).max`) rather than smuggling an economic policy change into a storage PR.
 Watch the arithmetic too: `uint56 * uint56` is evaluated **in** `uint56`, so `maxBet` needed an explicit `uint256(...)` widening or a governance-settable value would overflow and brick every `placeBet`.
 
+**A bound on the safe end of a range reads as coverage for the whole range.**
+That is why issue #57 sat unnoticed: `setSolvencyCap` rejected a *large* `den` so the setter looked bounded, while `maxPayout` is `treasuryBalance() / solvencyCapDen` and the danger is a *small* one, with `den == 1` setting maxPayout to the entire treasury.
+Ask which direction is dangerous before reading a bound as protection, because the two bounds here have unrelated causes: `MAX_ECONOMIC_RATIO` is storage width, `MIN_SOLVENCY_CAP_DEN` is economic policy, and their declarations say so to stop the next reader treating them as one kind of thing.
+Spec §5 now records both numbers, 1% seeded and 5% the loosest governance can reach, and **the contract enforces the 5%, not the 1%** - do not restate that as "the 1% is enforced".
+
+**A contract bound that `packages/web/lib/admin/ops.ts` does not mirror is a queued timelock call that reverts two days later.**
+That module exists for exactly this and says so in its header, so adding a setter bound is a two-file change by default.
+PR #58's first commit added `MIN_SOLVENCY_CAP_DEN` to `GAME_ABI` and gave it no consumer, leaving the console offering `den: 1`; both review axes found it independently.
+Bounds carry a `minReason`/`maxReason` so the operator reads *why*, not just a number.
+
 **A green CI step is not proof the step did anything.**
 Three of the gate's five defects were steps that succeeded while achieving nothing, and each cost a full CI round trip to find.
 `upload-artifact@v4` skips **hidden files** by default, so uploading `.evm-standards.json` produced no artifact and warned rather than failed - the gate then failed downstream for want of evidence CI had just recorded. Pair `include-hidden-files: true` with `if-no-files-found: error`; the second half is the one that matters.
@@ -172,6 +192,16 @@ Corollary, and the rule that governs this whole area: **prove the check fails on
 
 It bit a second time, subtler: `handlePlaceBet` folds its stake into `[minBet, maxBet]`, so **no sequence the campaign can generate ever breaches the cap** and `invariant_payoutWithinCap` stayed green with the `stake > maxBet(tier)` check deleted from `placeBet` outright.
 A folded input silently restricts the reachable state space, and the assertion about the state you folded away is the one that cannot fail. `handlePlaceOverCapBet` is that fix, plus an at-placement `maxPayout` snapshot (a live re-read is inflated by the stake being tested).
+
+A third time, and the widest form: **a parameter no handler writes is pinned for the whole run, so an assertion about it compares a constant to itself.**
+`solvencyCapDen` sat at its seeded 100 because nothing flipped `economicsGovernable`, so `invariant_payoutWithinCap`'s cap assertion compared 1% against 1% on every call and could not fail whatever the contract did.
+PR #58's two handlers fix it.
+The harness header names which parameters are unreachable *and why*; when you make one reachable, correct that sentence, because the reason can change without the conclusion changing (the edge is still unreachable, but now only because no handler calls `setEdge`, not because the flag is off).
+Watch the fold's own arithmetic: `medusa.json` sets `failOnArithmeticUnderflow: false`, so a handler whose range inverts reverts on every call and the campaign goes green having fuzzed nothing.
+
+**Restore a plant with a saved copy, never `git checkout --`.**
+A plant script that restores from git silently discards uncommitted work in the same file, which is exactly the state a review-fix round is in.
+It cost two comment fixes on #58 that had to be spotted and rewritten; nothing failed, and the only signal was the file being shorter than it should have been.
 
 **A check that recomputes the implementation and then compares that recomputation to itself passes for every input.**
 The #54 review found the pure form of it. `test/RoundingDirection.ts` computed `const burned = (stake * bps) / den` in TypeScript and asserted `burned * den <= stake * bps` - an identity of integer division, true whatever the contract does, and it never called the contract at all.
@@ -198,9 +228,8 @@ Least privilege travels with it: `evm-security.yml` ran with the default token g
 
 **`npm run lint` and CI's lint step must stay the same command.**
 They did not, and the divergence hid a red CI job behind a green local one for a full session: the script omitted `--max-warnings 0`, so it exited 0 on the three solhint warnings that made CI's Lint step exit 1.
-The fix is one copy, not two matching ones: `evm-security.yml`'s Solhint step now runs `npm run lint` rather than spelling the command out again.
-This is the local-command form of "a PR body claiming a green suite is not evidence" - if the command you run to check is not the command the gate runs, it is not a check.
-Note that `ci.yml`'s own Lint step is the root `npm run lint`, which fans out to every workspace, so tightening the contracts script tightened that job too.
+The fix is one copy, not two matching ones: `evm-security.yml`'s Solhint step now runs `npm run lint`, and `ci.yml`'s runs the root `npm run lint`, which fans out to every workspace.
+If the command you run to check is not the command the gate runs, it is not a check.
 
 **Check for path collisions before adding a file while another PR is in review** with `git diff main...<other-branch> --stat`. An ABI-order pin once landed at exactly the path #48 was already creating.
 
@@ -215,8 +244,7 @@ That makes Hardhat's own `ChainIdValidatorProvider` reject a foreign node on the
 It proves *which chain* answered, not what state it holds: a forked node still reports 31337.
 
 **The durable lesson from that review: a guard whose argument is fetched through the thing it guards can never run.**
-The first version called `assertLocalDevChain(network.name, (await ethers.provider.getNetwork()).chainId)` at six sites.
-The validator threw while that argument was still being evaluated, so the assert was never entered - and the stack trace pointed at *the assert's own line*, which is exactly what made it look live.
+Six sites called `assertLocalDevChain(network.name, chainId)` and fetched that `chainId` through the provider, four of them inline as `(await ethers.provider.getNetwork()).chainId`; the validator threw while the argument was still being evaluated, so the assert was never entered, and the stack trace pointed at *the assert's own line* - which is what made it look live.
 A guard that cannot execute is worse than none, because the next reader trusts it.
 
 **Ports.** Never use 3000 or 3100; other projects bind them, and 8545 is not reliably free either (see above).
@@ -233,5 +261,10 @@ Anything that displays its deadline must read **chain** time, never the browser 
 ## Owner-owned, never claim these are done
 
 The independent security audit, gambling/legal compliance, trademark review of "RUSHOOD", 25 ETH for the mainnet LP seed at the locked 1e-7 price, and the systemd install drill.
-The shipped fairness disclosure says the contracts are unaudited; keep it that way.
+The shipped fairness disclosure says the contracts are not yet audited (`FairnessDisclosure.tsx`, that wording rather than "unaudited" - grep for the phrase, not the word); keep it that way.
 `docs/ops/web3-security-review.md` is an engineering pass against published checklists, explicitly not the audit.
+
+**The engineering is close to done; the launch is not, and the gap is not code.**
+Owner chose full-audit-before-mainnet on 2026-08-12 rather than a capped guarded launch, so **the audit is the critical path** - it is external, it wants frozen source, and the redeploy is what freezes it.
+Legal is the one that can invalidate a timeline rather than delay it, because a compliance answer can change the product; it costs nothing to run in parallel and should start earliest.
+Do not read "all tickets closed" as "ready to launch"; that inference is what this section exists to block.
