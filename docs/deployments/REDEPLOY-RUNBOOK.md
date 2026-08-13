@@ -1,7 +1,7 @@
 # Testnet 46630 redeploy runbook
 
 For the redeploy that pays down five `.sol` changes at once and freezes the source for the audit.
-Written against `main` at the #58 merge.
+Written against `main` at the #58 merge, and brought forward to the #60 merge, which is where the checklist stamp step 2 relies on came from.
 Every command here is run **by the owner**, with the `!` prefix, for the reason in "Why you run these" below.
 
 ## Before you start
