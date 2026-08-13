@@ -13,7 +13,8 @@ It deliberately does not restate what the linked files already say.
 | `AGENTS.md` | Repo conventions, the prettier trap, and the **review cadence**. |
 | `docs/spec/RUSHOOD-game-spec.md` | The product spec, and the authority for the Spec axis of `/code-review`. |
 | `docs/agents/issue-tracker.md` | Issues live as GitHub issues, driven by `gh`. |
-| `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
+| `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Republished by the 2026-08-13 redeploy; the stale banner is gone because the redeploy is what it asked for. |
+| `docs/deployments/REDEPLOY-RUNBOOK.md` | How the redeploy was actually run, including the `HH309` trap and which env vars throw against which default silently. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
 | `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, on `main` since #54 merged (2026-08-11). Public, so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of the untracked `resources/web3-security.md`, which is spent and no longer has a row of its own. |
@@ -21,41 +22,38 @@ It deliberately does not restate what the linked files already say.
 
 ## Deployment reality
 
-**There is no mainnet deployment.** Only Robinhood Chain testnet 46630, deployed 2026-07-27.
-Verify with `git log --all --diff-filter=A -- 'docs/deployments/*'`.
-The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` hard-codes no mainnet endpoints on purpose.
+**There is no mainnet deployment.**
+Only Robinhood Chain testnet 46630, redeployed 2026-08-13.
+Verify with `git log --all --diff-filter=A -- 'docs/deployments/*'`, which returns one file.
+The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` hard-codes no mainnet endpoints on purpose and `activeChainConfigError` fails a mainnet build loudly rather than silently.
 
-Editing a `.sol` file breaks source verification for that deployment - the whole reason the freeze existed.
-It costs one testnet redeploy, not a migration, and `hardhat-verify` is broken against that Blockscout so budget for a manual verify.
+**The five-change redeploy debt is paid.** #48's repack, #54's `cancun` and `Treasury.GameSet`, #55's packed slot and #58's `MIN_SOLVENCY_CAP_DEN` are all on chain, verified against post-#58 source.
+Addresses are in `docs/deployments/robinhoodTestnet.md`; the runbook that produced them is `docs/deployments/REDEPLOY-RUNBOOK.md`.
+Confirmed on chain rather than from the deploy log: `MIN_SOLVENCY_CAP_DEN` reads 20, and slot 4 is byte-identical to the localhost rehearsal, so #55's packing survived #58.
+**Issue #47 is still open** and closes on the republished address list, which is blocked on the checklist-attribution fix below.
 
-**That debt is owed five times over**, which is the argument for paying it once rather than per change.
-Five *changes* from four PRs - count changes, not PR numbers: PR #48 repacked `RushoodGame`'s storage; PR #54 moved `evmVersion` to `cancun` **and** added `Treasury.GameSet` (that is two); PR #55 packed the five economic parameters into one slot, closing the second half of **issue** #47 (whose number is not its PR's, a conflation this paragraph has made once already); PR #58 added `MIN_SOLVENCY_CAP_DEN` for **issue** #57.
-Keep the `PR ` and `issue` prefixes here rather than tidying them away - a bare number is the conflation this very sentence warns about, and a round of review has already had to put them back once.
-The deployed 46630 bytecode matches the tree on none of the five.
-Issue #47 stays open until the redeploy: its last acceptance criterion is the republished address list, which is the redeploy itself.
+Editing a `.sol` file breaks source verification again, so the freeze holds until the audit is done.
 
-**#58 is the last `.sol` change, and that is what unblocks everything.**
-The redeploy freezes the source, and the source has to be frozen before an audit is worth commissioning, so the ordering is not a preference.
-Every other open item is TypeScript, CI or ops.
-Verify before trusting that: `git status` clean plus a scan for pending `.sol` work, not this sentence.
+**`hardhat-verify` is broken against this Blockscout, and it does not matter**, which is the correction worth carrying.
+It sends constructor arguments without the `0x` prefix this Blockscout demands, so #26 replaced it with `scripts/lib/blockscout-verify.ts`, and `verify-and-publish.ts` uses that.
+The 2026-08-13 run verified **6/6 automatically**; the manual agent-browser path was never needed.
+Do not re-record "budget for a manual verify" - budget instead for the bespoke submitter being the thing under test.
+Note it counts an already-verified contract as a pass, so on a redeploy confirm the *source* is current: fetch `/api/v2/smart-contracts/<addr>` and grep the source for a symbol only the new version has.
 
-**Four of the five change the public ABI, not just the bytecode**, so they can break a consumer rather than merely a verification badge.
-PR #48 was first and is still the sharpest: it reordered the `bets()` tuple, which is the *silent* kind of break (see the positional-decode trap below).
-PR #54's event is additive.
-PR #55 narrowed **nine** getters to `uint56` and added `MAX_ECONOMIC_RATIO`.
-PR #58 adds `MIN_SOLVENCY_CAP_DEN`, also additive.
+**The npm aliases cannot reach 46630 at all.**
+`deploy:launch` and `checklist` hardcode `--network localhost`, so appending another makes Hardhat throw `HH309: Repeated parameter --network`.
+That is a safe failure rather than a silent localhost deploy, but it means `npx hardhat run <script> --network robinhoodTestnet` is the only route, which is also the form the owner's deny rules reserve for the owner.
+`verify:publish` is the exception and takes an appended network, because its script declares none.
 
-**Count the constants, not just the variables** - `public constant` emits a getter, so the nine are **five constants and four variables**, not the other way round.
-The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`, and the variables are `edgeNum`, `edgeDen`, `solvencyCapDen` and `burnRateBps`.
-Both near-misses are worth naming: `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`, and `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
-Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
-`abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
-All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO` - and PR #58 declared `MIN_SOLVENCY_CAP_DEN` beside them.
-Count those ten by the names above, not by counting getters in `GAME_ABI`: they are interleaved with the rest rather than sitting in a block, and "economic" has no edge there that a grep could find.
+**A per-network filename cannot join to a per-deployment result**, and that shipped.
+`verify-and-publish.ts` published six brand-new addresses under "23/23 checks passed (2026-07-28)" - a run against the contracts those addresses had just replaced - because the only test was that `deployments/checklist-<network>.json` existed.
+`chainId` was in the record and could not help: it is identical across every redeploy of the same chain.
+The record now stamps all six addresses and the publisher compares them; see `scripts/lib/checklist-record.ts`.
+Ask what identifies a *deployment* before joining on anything a redeploy leaves unchanged.
 
-**The deploy tooling itself is proven against the post-#55 tree.**
-A localhost rehearsal on 2026-08-12 ran `deploy-launch` then `launch-checklist` to **23/23**, and a raw slot read off the deployed game confirmed the packed layout landed.
-What a rehearsal cannot cover is the publish half: `verify-and-publish.ts` refuses to run on a local node by design, so the manual Blockscout step stays the untested part of the redeploy.
+**Uniswap sorts pool tokens by address, so a redeploy can flip token0 and token1.**
+The new RUSH sorts above WETH where the old one sorted below, and `sqrtPriceX96` correctly inverted from 2.505e25 to 2.505e32.
+The pinned 1e-7 price is unchanged; a raw comparison of the two numbers looks like a catastrophic repricing and is not.
 
 **Nothing in this repo imports `dotenv`.**
 `packages/contracts/.env` is never loaded automatically, so every variable the real run needs must be exported into the shell by hand, or `requireEnv` throws and the fallbacks silently apply where they exist.
@@ -199,6 +197,17 @@ PR #58's two handlers fix it.
 The harness header names which parameters are unreachable *and why*; when you make one reachable, correct that sentence, because the reason can change without the conclusion changing (the edge is still unreachable, but now only because no handler calls `setEdge`, not because the flag is off).
 Watch the fold's own arithmetic: `medusa.json` sets `failOnArithmeticUnderflow: false`, so a handler whose range inverts reverts on every call and the campaign goes green having fuzzed nothing.
 
+**Testing one half of a join tests neither.**
+`checklist-record.ts` shipped with the reader covered by six tests and the writer's stamp sitting in an object literal in a script; deleting that stamp left **all 308 tests green**, and the failure would have been silent and permanent, since every later publish reads "not run" forever with nothing red to say why.
+The fix is to put both halves behind one tested function, then prove each plant separately: the builder losing the stamp must fail a test, and the caller losing a field must fail `tsc`.
+A guard is only ever as wide as what someone chose to write down, which is the same lesson `abi-matches-artifact.test.ts` learned when the constants it was meant to protect were simply absent from `GAME_ABI`.
+Where a list and a type must agree, make that a compile error: `satisfies` plus an `Exclude<keyof T, ...> extends never` check, and plant a seventh field to confirm the guard is what fails rather than four unrelated call sites.
+
+**Guard the container, not just the elements.**
+The commit that hardened each address against `null` left the object holding them checked with `=== undefined`, so `"stack": null` sailed through and threw `Cannot read properties of null` mid-publish.
+`null` is the specific value that defeats an `undefined` test while still being `typeof "object"`, and `JSON.parse` produces it from a file on disk.
+This is the repo's recurring shape at its purest: **a fix reproducing the defect it was written to remove, in the same function, in the commit that fixed the level below** - so when you harden a level, ask what holds it.
+
 **Restore a plant with a saved copy, never `git checkout --`.**
 A plant script that restores from git silently discards uncommitted work in the same file, which is exactly the state a review-fix round is in.
 It cost two comment fixes on #58 that had to be spotted and rewritten; nothing failed, and the only signal was the file being shorter than it should have been.
@@ -265,6 +274,12 @@ The shipped fairness disclosure says the contracts are not yet audited (`Fairnes
 `docs/ops/web3-security-review.md` is an engineering pass against published checklists, explicitly not the audit.
 
 **The engineering is close to done; the launch is not, and the gap is not code.**
-Owner chose full-audit-before-mainnet on 2026-08-12 rather than a capped guarded launch, so **the audit is the critical path** - it is external, it wants frozen source, and the redeploy is what freezes it.
+Owner chose full-audit-before-mainnet on 2026-08-12 rather than a capped guarded launch, so **the audit is the critical path** - it is external, it wants frozen source, and the 2026-08-13 redeploy froze it.
+As of that date the audit has not been commissioned, so the critical path has not started.
 Legal is the one that can invalidate a timeline rather than delay it, because a compliance answer can change the product; it costs nothing to run in parallel and should start earliest.
-Do not read "all tickets closed" as "ready to launch"; that inference is what this section exists to block.
+Do not read "all tickets closed" as "ready to launch"; that inference is what this section exists to block, and it was put to the test on 2026-08-13 when the frozen source and a 23/23 testnet run read as done.
+
+**The answer to "how far from mainnet" is not in the code, so do not compute it from the code.**
+Six of the ten unanswered gate items are launch gates rather than engineering gaps: `v-audit`, `v-bounty`, `ops-runbook`, `ops-contact`, `ops-bytecode` and `arch-multisig`.
+`arch-multisig` is the sharpest of those on a real-money chain: `GOVERNANCE_SAFE` is a bare env address, which is fine on testnet and is the key to the treasury on mainnet.
+The same session that reached "frozen and verified" also found a published page crediting a passing checklist to contracts it had never run against, through green CI and two review rounds - which is an argument for the audit rather than against the work.
