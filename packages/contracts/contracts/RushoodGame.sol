@@ -100,8 +100,10 @@ contract RushoodGame is Pausable {
 
     /// @notice Default treasury floor below which the game pauses (accepts no new bets).
     /// @dev `DEFAULT_MIN_BET * DEFAULT_EDGE_NUM * 1000` — the pool size at which the
-    ///      riskiest tier's (1-in-1000) minimum bet exactly saturates the 1% solvency
-    ///      cap: `maxBet(moonshot) == minBet` here. At or above the floor every tier is
+    ///      riskiest tier's (1-in-1000) minimum bet exactly saturates the *seeded* 1%
+    ///      solvency cap: `maxBet(moonshot) == minBet` here. Derived against
+    ///      `DEFAULT_SOLVENCY_CAP_DEN`, so governance loosening the cap moves this
+    ///      relationship without moving the floor. At or above the floor every tier is
     ///      therefore playable at a >= minBet stake; below it the house is too thin to
     ///      safely back the top tiers, so the game pauses rather than offer a bet it
     ///      can't cover.
@@ -453,7 +455,8 @@ contract RushoodGame is Pausable {
         if (treasuryBalance() < treasuryFloor) revert TreasuryBelowFloor();
         if (stake < minBet) revert BetBelowMin();
         // Cap against the balance *before* this stake is added, so a win pays at most
-        // 1% of the pool the bet joined.
+        // `1 / solvencyCapDen` of the pool the bet joined - 1% as seeded, and never
+        // looser than 5% because `MIN_SOLVENCY_CAP_DEN` floors what governance can set.
         if (stake > maxBet(tier)) revert ExceedsMaxBet();
 
         betId = ++betCounter;

@@ -21,8 +21,12 @@ import {RushoodGame} from "../RushoodGame.sol";
 ///
 /// It is genuinely falsifiable rather than tautological, and it is worth being exact
 /// about where that falsifiability comes from, because an earlier version of this comment
-/// was not. `edgeNum` and `edgeDen` are NOT reachable by this campaign: their setters
-/// carry `whenEconomicsGovernable` and nothing here flips it for them.
+/// was not. `edgeNum` and `edgeDen` are NOT reachable by this campaign, and the reason
+/// changed with #57: it is no longer that `economicsGovernable` stays false, because the
+/// solvency-cap handlers below flip it and it is one global flag that nothing sets back.
+/// What keeps the edge fixed is simply that no handler calls `setEdge`. Stated precisely
+/// because the previous wording named a mechanism, and a reader who trusted it would
+/// conclude the edge was locked when only the absence of a handler locks it.
 ///
 /// `solvencyCapDen` WAS in that list and is not any more (#57). While it was, the first
 /// assertion in `invariant_payoutWithinCap` compared 1% against 1% on every call: the
@@ -88,8 +92,8 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
 
     /// @dev `maxPayout` as it stood when the open bet was placed, snapshotted rather than
     ///      re-read at assertion time. The contract caps "against the balance *before*
-    ///      this stake is added, so a win pays at most 1% of the pool the bet joined"
-    ///      (RushoodGame.placeBet), and the stake then joins the treasury - so re-reading
+    ///      this stake is added, so a win pays at most `1 / solvencyCapDen` of the pool
+    ///      the bet joined" (RushoodGame.placeBet), and the stake then joins the treasury - so re-reading
     ///      `maxPayout()` afterwards compares the bet against a pool its own stake has
     ///      already inflated. That is a weaker question than the spec asks, and weak in
     ///      the direction that hides a violation.
@@ -212,7 +216,12 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
         if (!game.economicsGovernable()) game.setEconomicsGovernable(true);
 
         uint256 floor = game.MIN_SOLVENCY_CAP_DEN();
-        game.setSolvencyCap(floor + (denSeed % (1_000 - floor + 1)));
+        // `top` is clamped up rather than written as the literal 1000, so raising the
+        // floor past 1000 later cannot invert the band. It would otherwise underflow, and
+        // `medusa.json` sets `failOnArithmeticUnderflow: false`, so the handler would
+        // revert on every call and the campaign would go green having fuzzed nothing.
+        uint256 top = floor > 1_000 ? floor : 1_000;
+        game.setSolvencyCap(floor + (denSeed % (top - floor + 1)));
     }
 
     /// @dev The extreme, as its own zero-argument call, for the same reason as
@@ -251,8 +260,10 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///
     /// This exists because the sampled version above could not find the break. Burning a
     /// uniformly random slice leaves roughly half the treasury standing, which still
-    /// covers a payout capped at 1% of it - so the violating region is the last ~1% of
-    /// the range and the campaign essentially never landed there. With the floor burn
+    /// covers a payout capped at the seeded 1% of it - so the violating region is the last
+    /// ~1% of the range and the campaign essentially never landed there. The margin
+    /// narrows if governance loosens the cap toward 5%, but not enough to change the
+    /// conclusion: the sampler still needs the extreme handed to it. With the floor burn
     /// available as its own call, removing the mid-bet guard fails in seconds.
     ///
     /// The general lesson, worth more than this handler: a bounded handler decides which
@@ -333,8 +344,9 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     /// @dev The gap this closes: `invariant_solvency` above compares the open bet's
     ///      liability against the treasury's whole balance, so it says "solvent" and
     ///      stops there. Spec §5 locks something strictly stronger - "maxPayout <= ~1%
-    ///      of the Treasury's current RUSH balance" - and a system can satisfy the first
-    ///      while violating the second on every bet.
+    ///      of the Treasury's current RUSH balance" as seeded, and no looser than 5%
+    ///      whatever governance does (#57) - and a system can satisfy the first while
+    ///      violating the second on every bet.
     ///
     ///      Three assertions, each falsifiable on its own:
     ///
@@ -370,9 +382,14 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///         itself being wrong - it catches the ratio, which is what §5 locks.
     ///      4. The shipped default still is the spec's 1%. A constant against a literal,
     ///         which is a valid anchor precisely because the literal comes from the spec
-    ///         and not from the contract. It cannot fail mid-run, and it is not meant to:
-    ///         it fails at compile-to-campaign time if someone retunes the seeded default
-    ///         without amending §5.
+    ///         and not from the contract. Its value is invariant across a run, so it
+    ///         fails on the campaign's first check or not at all - it exists to catch a
+    ///         retuned `DEFAULT_SOLVENCY_CAP_DEN` that §5 was not told about, verified by
+    ///         planting exactly that. **It pins the constant only**: a constructor seeding
+    ///         `solvencyCapDen` to something other than the default, or a bug in
+    ///         `maxPayout`'s arithmetic, sits inside the 5% bound and passes both this and
+    ///         assertion 3. `test/SolvencyCapFloor.ts` and `OddsTiers.ts` are what cover
+    ///         those, and this comment says so rather than letting the pair look total.
     ///
     /// The `invariant_` prefix is the vocabulary the property mixins already use -
     /// `invariant_solvency` and `invariant_conservation` are named the same way, and the

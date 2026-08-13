@@ -49,6 +49,18 @@ export type AdminOpId =
 export const DEFAULT_MAX_BURN_RATE_BPS = 1_000n;
 
 /**
+ * `RushoodGame.MIN_SOLVENCY_CAP_DEN` - the floor `setSolvencyCap` enforces (#57), so no
+ * single win can take more than 5% of the treasury.
+ *
+ * Mirrored for the same reason as `MAX_ECONOMIC_RATIO` below, and it matters more here
+ * than the ceiling does: the ceiling rejects a value nobody would type, whereas the floor
+ * rejects the *plausible-looking* small denominators. Before this bound existed the form
+ * accepted `1`, which is a queued call that burns the whole timelock delay and then
+ * reverts - exactly what this module's bounds exist to prevent.
+ */
+export const MIN_SOLVENCY_CAP_DEN = 20n;
+
+/**
  * `RushoodGame.MAX_ECONOMIC_RATIO` - the largest value `edgeNum`, `edgeDen` and
  * `solvencyCapDen` can hold now that #47 packed them into one `uint56` slot. Above it
  * `setEdge` and `setSolvencyCap` revert with `InvalidEconomics`.
@@ -81,6 +93,8 @@ export interface AdminOpField {
    * and a shared message would state the wrong one for the next field that grows a `max`.
    */
   maxReason?: string;
+  /** The same, for the lower bound. See `maxReason`. */
+  minReason?: string;
   placeholder?: string;
   hint?: string;
 }
@@ -257,11 +271,12 @@ export const ADMIN_OPS: readonly AdminOpSpec[] = [
         name: "den",
         label: "Cap denominator",
         kind: "integer",
-        min: 1n,
+        min: MIN_SOLVENCY_CAP_DEN,
+        minReason: "a smaller denominator would let one win take more than 5% of the treasury",
         max: MAX_ECONOMIC_RATIO,
         maxReason: "the game packs it into 56 bits and reverts above that",
         placeholder: "100",
-        hint: "100 = the 1% cap that makes the house solvent by construction.",
+        hint: "100 = the 1% cap the game ships with. 20 is the loosest the contract allows.",
       },
     ],
     needsEconomicsUnlocked: true,
@@ -408,7 +423,8 @@ function withinBound(
       message:
         field.kind === "rush"
           ? `${field.label} must be greater than zero - the game rejects it otherwise`
-          : `${field.label} must be at least ${field.min}`,
+          : `${field.label} must be at least ${field.min}` +
+            (field.minReason ? ` - ${field.minReason}` : ""),
     });
     return undefined;
   }
