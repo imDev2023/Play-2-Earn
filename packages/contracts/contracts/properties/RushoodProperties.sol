@@ -348,7 +348,7 @@ contract RushoodProperties is ConservationProperties, SolvencyProperties {
     ///      whatever governance does (#57) - and a system can satisfy the first while
     ///      violating the second on every bet.
     ///
-    ///      Three assertions, each falsifiable on its own:
+    ///      Four assertions, each falsifiable on its own:
     ///
     ///      1. The contract's payout never exceeds the spec's `0.95 x N x stake`. This is
     ///         the one the mixins cannot make, because `_activeLiability` used to derive

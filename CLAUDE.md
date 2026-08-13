@@ -16,7 +16,7 @@ It deliberately does not restate what the linked files already say.
 | `docs/deployments/robinhoodTestnet.md` | The only deployment that exists. Currently marked stale, see below. |
 | `docs/ops/dependency-advisories.md` | Six high advisories are open and accepted. CI gates at `critical`, not `high`. |
 | `~/Documents/agent-guides/web3-e2e-testing.md` | How to drive a wallet in tests. Not in this repo, by owner decision. Read before touching e2e or a wallet. |
-| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, on `main` since #54 merged (2026-08-11). Public, so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of `web3-security.md`. |
+| `packages/contracts/lib/evm-security-standards/` | Submodule at profile `robinhood-4663`, on `main` since #54 merged (2026-08-11). Public, so CI can clone it; a private submodule fails every job at checkout, because `GITHUB_TOKEN` is scoped to this repo alone. Contracts import property mixins from it, so **any checkout without `submodules: recursive` cannot compile**. **The authority for any chain question** - read `profiles/robinhood-4663.md` rather than answering from general knowledge. Supersedes the Solidity half of the untracked `resources/web3-security.md`, which is spent and no longer has a row of its own. |
 | `resources/01-robinhood-chain.md` | Untracked. Crawled platform facts for chain 4663: Arbitrum Nitro L2, ArbOS semantics, ERC-8056, the 48-hour feed gap, and the confirmation that **there is no L2 sequencer uptime feed on 4663** - which closes one of the profile's two `OPEN:` answers. |
 
 ## Deployment reality
@@ -34,7 +34,8 @@ Keep the `PR ` and `issue` prefixes here rather than tidying them away - a bare 
 The deployed 46630 bytecode matches the tree on none of the five.
 Issue #47 stays open until the redeploy: its last acceptance criterion is the republished address list, which is the redeploy itself.
 
-**#58 is the last `.sol` change, and that is what unblocks everything.** The redeploy freezes the source, and the source has to be frozen before an audit is worth commissioning, so the ordering is not a preference.
+**#58 is the last `.sol` change, and that is what unblocks everything.**
+The redeploy freezes the source, and the source has to be frozen before an audit is worth commissioning, so the ordering is not a preference.
 Every other open item is TypeScript, CI or ops.
 Verify before trusting that: `git status` clean plus a scan for pending `.sol` work, not this sentence.
 
@@ -49,7 +50,7 @@ The constants are the four narrowed `DEFAULT_*` seeds plus `MAX_BURN_RATE_BPS`, 
 Both near-misses are worth naming: `DEFAULT_MIN_BET` and `DEFAULT_TREASURY_FLOOR` are `DEFAULT_*` too and stayed `uint256`, and `economicsGovernable` sits in the packed block and reads as a fifth variable, but it is a `bool` and was never narrowed.
 Four plus five totals the same nine as five plus four, so **a total that agrees is not the check** - the wrong split survived two drafts on exactly that.
 `abi-matches-artifact.test.ts` could not have caught that either: those constants were absent from `GAME_ABI`, and **a guard is only ever as wide as the ABI someone chose to write down**.
-All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`.
+All ten are declared now - the nine narrowed getters plus `MAX_ECONOMIC_RATIO`, and #58's `MIN_SOLVENCY_CAP_DEN` makes eleven economic getters in `GAME_ABI`, so count the ten by name rather than by grepping the block.
 
 **The deploy tooling itself is proven against the post-#55 tree.**
 A localhost rehearsal on 2026-08-12 ran `deploy-launch` then `launch-checklist` to **23/23**, and a raw slot read off the deployed game confirmed the packed layout landed.
@@ -188,7 +189,8 @@ It bit a second time, subtler: `handlePlaceBet` folds its stake into `[minBet, m
 A folded input silently restricts the reachable state space, and the assertion about the state you folded away is the one that cannot fail. `handlePlaceOverCapBet` is that fix, plus an at-placement `maxPayout` snapshot (a live re-read is inflated by the stake being tested).
 
 A third time, and the widest form: **a parameter no handler writes is pinned for the whole run, so an assertion about it compares a constant to itself.**
-`solvencyCapDen` sat at its seeded 100 because nothing flipped `economicsGovernable`, so `invariant_payoutWithinCap`'s cap assertion compared 1% against 1% on every call and could not fail whatever the contract did. #58's two handlers fix it.
+`solvencyCapDen` sat at its seeded 100 because nothing flipped `economicsGovernable`, so `invariant_payoutWithinCap`'s cap assertion compared 1% against 1% on every call and could not fail whatever the contract did.
+PR #58's two handlers fix it, and the `PR ` prefix is load-bearing: split onto its own line, a bare `#58` at column zero would render as an H1.
 The harness header names which parameters are unreachable *and why*; when you make one reachable, correct that sentence, because the reason can change without the conclusion changing (the edge is still unreachable, but now only because no handler calls `setEdge`, not because the flag is off).
 Watch the fold's own arithmetic: `medusa.json` sets `failOnArithmeticUnderflow: false`, so a handler whose range inverts reverts on every call and the campaign goes green having fuzzed nothing.
 
@@ -237,7 +239,7 @@ That makes Hardhat's own `ChainIdValidatorProvider` reject a foreign node on the
 It proves *which chain* answered, not what state it holds: a forked node still reports 31337.
 
 **The durable lesson from that review: a guard whose argument is fetched through the thing it guards can never run.**
-Six sites called `assertLocalDevChain(name, (await ethers.provider.getNetwork()).chainId)`; the validator threw while that argument was still being evaluated, so the assert was never entered, and the stack trace pointed at *the assert's own line* - which is what made it look live.
+Six sites called `assertLocalDevChain(network.name, chainId)` and fetched that `chainId` through the provider, four of them inline as `(await ethers.provider.getNetwork()).chainId`; the validator threw while the argument was still being evaluated, so the assert was never entered, and the stack trace pointed at *the assert's own line* - which is what made it look live.
 A guard that cannot execute is worse than none, because the next reader trusts it.
 
 **Ports.** Never use 3000 or 3100; other projects bind them, and 8545 is not reliably free either (see above).
