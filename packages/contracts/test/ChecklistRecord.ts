@@ -128,6 +128,47 @@ describe("checklist attribution (#47 address list)", () => {
   });
 
   describe("malformed records, which are parsed from disk unvalidated", () => {
+    // The container, not the elements. `JSON.parse` yields this for `"stack": null`, it
+    // is `typeof "object"`, and it is not `undefined` - so a `=== undefined` test waved
+    // it straight through to be indexed. The commit that hardened the addresses against
+    // null introduced this one level up, in the same function.
+    it("does not throw when the whole stack is null", () => {
+      const line = checklistLine(record(DEPLOYED, { stack: null }), DEPLOYED);
+
+      expect(line).to.contain("Not run against this deployment");
+      expect(line).to.not.contain("23/23 checks passed");
+    });
+
+    it("does not throw when the stack is an array", () => {
+      const line = checklistLine(record(DEPLOYED, { stack: [] }), DEPLOYED);
+
+      expect(line).to.contain("Not run against this deployment");
+    });
+
+    it("does not throw when the stack is not an object at all", () => {
+      const line = checklistLine(record(DEPLOYED, { stack: "0xdeadbeef" }), DEPLOYED);
+
+      expect(line).to.contain("Not run against this deployment");
+    });
+
+    it("omits the parenthesised date rather than rendering empty parens", () => {
+      const line = checklistLine(record(DEPLOYED, { ranAt: undefined }), DEPLOYED);
+
+      expect(line).to.contain("**23/23 checks passed**");
+      expect(line).to.not.contain("()");
+      expect(line).to.not.contain("undefined");
+    });
+
+    it("omits it on the failure line too, which is the adjacent field", () => {
+      const line = checklistLine(
+        record(DEPLOYED, { ranAt: undefined, passed: 21, total: 23, failures: ["refund"] }),
+        DEPLOYED,
+      );
+
+      expect(line).to.contain("**21/23 checks passed**");
+      expect(line).to.not.contain("()");
+    });
+
     it("does not throw when an address is null", () => {
       const line = checklistLine(
         record(DEPLOYED, { stack: { ...DEPLOYED, game: null } }),

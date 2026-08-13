@@ -37,7 +37,26 @@ export interface StackAddresses {
   readonly timelock: string;
 }
 
-const STACK_KEYS = ["rush", "treasury", "game", "vesting", "lpLock", "timelock"] as const;
+const STACK_KEYS = [
+  "rush",
+  "treasury",
+  "game",
+  "vesting",
+  "lpLock",
+  "timelock",
+] as const satisfies readonly (keyof StackAddresses)[];
+
+/**
+ * Fails to compile if `StackAddresses` gains a field `STACK_KEYS` does not list.
+ *
+ * Without it, a seventh address would be stamped nowhere and compared never, and `tsc`
+ * would report the four unrelated call sites while staying silent about the two that
+ * matter. That is the invisible-drop this module exists to prevent, so it must not be
+ * possible here either.
+ */
+type MissingFromStackKeys = Exclude<keyof StackAddresses, (typeof STACK_KEYS)[number]>;
+const _stackKeysAreExhaustive: MissingFromStackKeys extends never ? true : never = true;
+void _stackKeysAreExhaustive;
 
 /** Written by `launch-checklist.ts`. Fields are optional because older records exist. */
 export interface ChecklistRecord {
@@ -64,6 +83,19 @@ function sameAddress(a: unknown, b: unknown): boolean {
   return isAddress(a) && isAddress(b) && a.toLowerCase() === b.toLowerCase();
 }
 
+/**
+ * Is this record's stack a usable object at all?
+ *
+ * `null` is the value worth naming. It is what `JSON.parse` yields for `"stack": null`,
+ * it is `typeof "object"`, and it is not `undefined` - so a `=== undefined` test waves it
+ * through to be indexed. The first version of this module hardened the addresses against
+ * `null` and left the container open, which is the same defect one level up, introduced
+ * by the commit that fixed the level below.
+ */
+function isStack(value: unknown): value is Partial<StackAddresses> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function sameStack(recorded: Partial<StackAddresses>, deployed: StackAddresses): boolean {
   return STACK_KEYS.every((key) => sameAddress(recorded[key], deployed[key]));
 }
@@ -87,14 +119,12 @@ export function buildChecklistRecord(args: {
   return {
     network: args.network,
     chainId: args.chainId,
-    stack: {
-      rush: args.stack.rush,
-      treasury: args.stack.treasury,
-      game: args.stack.game,
-      vesting: args.stack.vesting,
-      lpLock: args.stack.lpLock,
-      timelock: args.stack.timelock,
-    },
+    // Built from STACK_KEYS rather than field by field, so the writer and the comparison
+    // cannot drift apart. A hand-copied literal here would silently omit a seventh
+    // address that `STACK_KEYS` had gained.
+    stack: Object.fromEntries(
+      STACK_KEYS.map((key) => [key, args.stack[key]]),
+    ) as unknown as StackAddresses,
     passed: args.passed,
     total: args.total,
     ranAt: args.ranAt ?? new Date().toISOString(),
@@ -122,7 +152,7 @@ export function checklistLine(record: ChecklistRecord | null, deployed: StackAdd
   // An unstamped record cannot be attributed to any deployment, so it cannot vouch for
   // this one. Saying a record exists beats a bare "not run", because the reader is
   // looking at a file that plainly does.
-  if (record.stack === undefined) {
+  if (!isStack(record.stack)) {
     return (
       `${NOT_RUN}\n\n` +
       `A checklist record exists${dated} but does not record which deployment it ran\n` +
@@ -148,10 +178,14 @@ export function checklistLine(record: ChecklistRecord | null, deployed: StackAdd
     );
   }
 
+  // Parenthesised only when there is a date to put in it. Guarding `passed`/`total`
+  // against rendering the word "undefined" and leaving this one to render "()" would
+  // have been the same defect in the adjacent field.
+  const on = when ? ` (${when})` : "";
   if (record.passed === record.total) {
-    return `**${record.passed}/${record.total} checks passed** (${when}) - play across all six tiers, the
+    return `**${record.passed}/${record.total} checks passed**${on} - play across all six tiers, the
 public fairness verifier, bet caps, guardian pause/unpause, and the relayer-down refund
 after a real \`SETTLE_TIMEOUT\` wait.`;
   }
-  return `**${record.passed}/${record.total} checks passed** (${when}). FAILED: ${(record.failures ?? []).join(", ")}`;
+  return `**${record.passed}/${record.total} checks passed**${on}. FAILED: ${(record.failures ?? []).join(", ")}`;
 }

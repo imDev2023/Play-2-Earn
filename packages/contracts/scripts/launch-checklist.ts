@@ -336,6 +336,16 @@ async function main() {
       2,
     ) + "\n",
   );
+  // The published page is generated separately, so a publish-then-checklist ordering
+  // leaves it saying "not run" until someone regenerates it. That ordering is what the
+  // 2026-08-13 redeploy actually did, so the reminder is printed rather than assumed.
+  if (!isLocal) {
+    console.log(
+      `\nRe-run scripts/verify-and-publish.ts --network ${network.name} to put this result ` +
+        `on the published address list.`,
+    );
+  }
+
   if (failed.length > 0) {
     console.log("\nFAILED:");
     for (const f of failed) console.log(`  - ${f.name}: ${f.detail}`);

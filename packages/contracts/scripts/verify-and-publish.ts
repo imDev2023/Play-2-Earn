@@ -189,10 +189,10 @@ async function buildSource(target: VerifyTarget): Promise<VerificationRequest> {
  * Absence is reported rather than omitted: a page that simply leaves the section out
  * reads as "fine" to someone skimming, when the honest statement is "unknown".
  *
- * The record is joined to the deployment by game address rather than by filename, because
- * the filename is per network and a redeploy does not change the network. See
- * `lib/checklist-record.ts` for the run that published a previous stack's result under
- * six new addresses.
+ * The record is joined to the deployment by the whole stack of six addresses rather than
+ * by filename, because the filename is per network and a redeploy does not change the
+ * network. See `lib/checklist-record.ts` for the run that published a previous stack's
+ * result under six new addresses.
  */
 function readChecklistRecord(): ChecklistRecord | null {
   const path = join(__dirname, "..", "deployments", `checklist-${network.name}.json`);
@@ -286,6 +286,16 @@ function renderAddressList(
     })
     .join("\n");
 
+  // The stack the checklist record has to name to be credited to this page.
+  const publishedStack = {
+    rush: deployment.rush,
+    treasury: deployment.treasury,
+    game: deployment.game,
+    vesting: deployment.vesting,
+    lpLock: deployment.lpLock,
+    timelock: deployment.timelock,
+  };
+
   const unlock = new Date(Number(deployment.lpUnlockTime) * 1000).toISOString().slice(0, 10);
   const cliff = new Date((Number(deployment.vestingStart) + 180 * 86400) * 1000)
     .toISOString()
@@ -322,14 +332,7 @@ open-source verifier in \`packages/verifier\`. The in-app panel is at \`/verify\
 
 ## Launch checklist
 
-${checklistLine(readChecklistRecord(), {
-    rush: deployment.rush,
-    treasury: deployment.treasury,
-    game: deployment.game,
-    vesting: deployment.vesting,
-    lpLock: deployment.lpLock,
-    timelock: deployment.timelock,
-  })}
+${checklistLine(readChecklistRecord(), publishedStack)}
 
 ## Status
 
