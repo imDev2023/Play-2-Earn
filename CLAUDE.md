@@ -31,7 +31,7 @@ The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` har
 **The five-change redeploy debt is paid.** #48's repack, #54's `cancun` and `Treasury.GameSet`, #55's packed slot and #58's `MIN_SOLVENCY_CAP_DEN` are all on chain, verified against post-#58 source.
 Addresses are in `docs/deployments/robinhoodTestnet.md`; the runbook that produced them is `docs/deployments/REDEPLOY-RUNBOOK.md`.
 Confirmed on chain rather than from the deploy log: `MIN_SOLVENCY_CAP_DEN` reads 20, and slot 4 is byte-identical to the localhost rehearsal, so #55's packing survived #58.
-**Issue #47 is still open** and closes on the republished address list, which is blocked on the checklist-attribution fix below.
+**#47 closes on PR #62**, the republished list, which is its last acceptance criterion.
 
 Editing a `.sol` file breaks source verification again, so the freeze holds until the audit is done.
 
@@ -39,18 +39,24 @@ Editing a `.sol` file breaks source verification again, so the freeze holds unti
 It sends constructor arguments without the `0x` prefix this Blockscout demands, so #26 replaced it with `scripts/lib/blockscout-verify.ts`, and `verify-and-publish.ts` uses that.
 The 2026-08-13 run verified **6/6 automatically**; the manual agent-browser path was never needed.
 Do not re-record "budget for a manual verify" - budget instead for the bespoke submitter being the thing under test.
-Note it counts an already-verified contract as a pass, so on a redeploy confirm the *source* is current: fetch `/api/v2/smart-contracts/<addr>` and grep the source for a symbol only the new version has.
+Note it counts an already-verified contract as a pass, so on a redeploy confirm the *source* is current rather than the status.
+**Compare whole files, not a symbol.**
+Fetch `/api/v2/smart-contracts/<addr>` and diff the returned source against the repo's `.sol` on normalised whitespace; all six matched on 2026-08-13 at solc 0.8.24, `cancun`, 200 runs.
+Grepping for "a symbol only the new version has" is the tempting shortcut and it went wrong twice in one commit: it covered two of six contracts, and one symbol chosen was `Treasury.setGame`, which dates from the walking skeleton and so appears in the *replaced* source too.
+#54's symbol is the `GameSet` event.
+A whole-file compare needs no such judgement and cannot be fooled by a name that was always there.
 
 **The npm aliases cannot reach 46630 at all.**
 `deploy:launch` and `checklist` hardcode `--network localhost`, so appending another makes Hardhat throw `HH309: Repeated parameter --network`.
 That is a safe failure rather than a silent localhost deploy, but it means `npx hardhat run <script> --network robinhoodTestnet` is the only route, which is also the form the owner's deny rules reserve for the owner.
 `verify:publish` is the exception and takes an appended network, because its script declares none.
 
-**A per-network filename cannot join to a per-deployment result**, and that shipped.
-`verify-and-publish.ts` published six brand-new addresses under "23/23 checks passed (2026-07-28)" - a run against the contracts those addresses had just replaced - because the only test was that `deployments/checklist-<network>.json` existed.
-`chainId` was in the record and could not help: it is identical across every redeploy of the same chain.
-The record now stamps all six addresses and the publisher compares them; see `scripts/lib/checklist-record.ts`.
-Ask what identifies a *deployment* before joining on anything a redeploy leaves unchanged.
+**A per-network filename cannot join to a per-deployment result**, and that shipped once.
+Fixed in #60; `scripts/lib/checklist-record.ts`'s header is the full account and the authority.
+The durable half: ask what identifies a *deployment* before joining on anything a redeploy leaves unchanged.
+`chainId` was already in the record and could not help, being identical across every redeploy of the same chain.
+**The 2026-08-13 record was hand-stamped**, the run predating the stamp, and `deployments/` is gitignored - so a fresh checkout has no record and republishing there would honestly report "not run".
+Re-run the checklist rather than re-stamping by hand a second time.
 
 **Uniswap sorts pool tokens by address, so a redeploy can flip token0 and token1.**
 The new RUSH sorts above WETH where the old one sorted below, and `sqrtPriceX96` correctly inverted from 2.505e25 to 2.505e32.
@@ -64,6 +70,14 @@ abitype decodes `<= 48` bits as a JS `number` and `>= 56` as a `bigint`, and the
 A `uint32` would therefore typecheck green and throw `Cannot mix BigInt and other types` on first render.
 
 ## Traps that cost time
+
+**A wagmi read with no `chainId` does not read the chain the app is configured for.**
+It resolves to the connected wallet's chain, or with no wallet to `wagmiConfig.chains[0]`, which is `hardhat` - so a testnet build with no wallet reads `127.0.0.1:8545`, meaning whoever answers there.
+This is the client-side twin of the `--network localhost` trap below, same port, other half of the repo.
+Found the first time the app was pointed at 46630 (issue #63, eight unpinned sites): `/verify`'s lookup returned `bets returned no data ("0x")` while the contract provably had 15,098 hex chars of bytecode, because another project's `anvil` held 8545.
+`app/PlayPanel.tsx` pins `chainId: activeChainId` on all 15 of its calls and is the model; `VerifyTool.tsx`, `useBetHistory`'s `hydrate` and five admin hooks do not.
+**Neither e2e suite can catch this**, both running against a local node where the configured chain and `chains[0]` are the same value - so the condition under test is one the harness makes unreachable, which is the folded-input lesson from the fuzzing section arriving in the client.
+Prove which chain answered by moving *only* `NEXT_PUBLIC_RPC_URL` (the local transport) and seeing a supposedly-testnet read change behaviour.
 
 **Never hand a wagmi watcher a function built during render.**
 `useWatchContractEvent` lists `onLogs` in its effect dependencies (read it in `node_modules/wagmi/dist/esm/hooks/useWatchContractEvent.js`), so a new identity tears the subscription down and opens another - and every log emitted in that gap is lost, silently.
@@ -82,8 +96,8 @@ That suite now runs in CI as the `connected-e2e` job (#49 landed). It is the onl
 **The `bets()` tuple decodes positionally, so a reorder puts every field in its neighbour without throwing.**
 An address is still an address, and Typechain returns named tuples so contract tests pass whatever the order is.
 Any consumer derives its field order from the ABI and never hard-codes one; the guards are `packages/web/test/abi-matches-artifact.test.ts` (#53) and `toBetView` / `BetViewNamesMatchAbi` / `RawBet` in `lib/contracts.ts` (#51). Read those, not this paragraph.
-Three positional sites remain, at `packages/web/app/verify/VerifyTool.tsx` and `packages/web/lib/admin/useRelayerHealth.ts` twice, and want migrating onto `toBetView`.
-Both files had moved since this line was written and the old paths grepped to nothing, which is the argument for `grep -rn "bets("` over a path recorded here.
+Positional sites still want migrating onto `toBetView`; issue #63 enumerates them, since it had to enumerate the same call sites for the chain-pinning fix.
+Find them with `grep -rn "bets("` rather than from a path recorded here, which has gone stale once already.
 
 **The durable lesson: this trap bit three times *inside the code written to prevent it*, and a fourth time during the merge that was supposed to end it.**
 `toBetView` shipped positional, then fixed the order but cast away the names. #53, the guard for exactly this, shipped ignoring `indexed`. Then #48's repack collided with #51's `hydrate`; git showed that conflict only because both sides happened to touch the same lines, and it would otherwise have merged clean and silently wrong.
@@ -284,3 +298,7 @@ Do not read "all tickets closed" as "ready to launch"; that inference is what th
 Six of the ten unanswered gate items are launch gates rather than engineering gaps: `v-audit`, `v-bounty`, `ops-runbook`, `ops-contact`, `ops-bytecode` and `arch-multisig`.
 `arch-multisig` is the sharpest of those on a real-money chain: `GOVERNANCE_SAFE` is a bare env address, which is fine on testnet and is the key to the treasury on mainnet.
 The same session that reached "frozen and verified" also found a published page crediting a passing checklist to contracts it had never run against, through green CI and two review rounds - which is an argument for the audit rather than against the work.
+Then the first time the *client* was pointed at that verified deployment, one button surfaced issue #63.
+**"Testnet is green" has meant "the contracts are exercised", never "the product is."**
+The 23/23 checklist is a script driving contracts through ethers and never renders a component, while every bug this project has actually shipped lives in the client.
+Do not let the two claims stand in for each other.
