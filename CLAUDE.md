@@ -24,7 +24,8 @@ It deliberately does not restate what the linked files already say.
 
 **There is no mainnet deployment.**
 Only Robinhood Chain testnet 46630, redeployed 2026-08-13.
-Verify with `git log --all --diff-filter=A -- 'docs/deployments/*'`, which returns one file.
+Verify with `git log --all --diff-filter=A --name-only -- 'docs/deployments/*'`, which names two files and **one deployment record**: `robinhoodTestnet.md`, plus `REDEPLOY-RUNBOOK.md`, which is procedure rather than a record.
+A deployment record here is named after its network, so a mainnet one would be impossible to miss.
 The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` hard-codes no mainnet endpoints on purpose and `activeChainConfigError` fails a mainnet build loudly rather than silently.
 
 **The five-change redeploy debt is paid.** #48's repack, #54's `cancun` and `Treasury.GameSet`, #55's packed slot and #58's `MIN_SOLVENCY_CAP_DEN` are all on chain, verified against post-#58 source.
