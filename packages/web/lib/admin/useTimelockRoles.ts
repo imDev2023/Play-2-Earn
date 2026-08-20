@@ -34,10 +34,30 @@ export function useTimelockRoles(governance?: Address, account?: Address): Timel
   // into a failed entry rather than a thrown query, which is exactly the signal wanted.
   const { data: probe, isLoading: probing } = useReadContracts({
     contracts: [
-      { chainId: activeChainId, address: governance, abi: TIMELOCK_ABI, functionName: "getMinDelay" },
-      { chainId: activeChainId, address: governance, abi: TIMELOCK_ABI, functionName: "PROPOSER_ROLE" },
-      { chainId: activeChainId, address: governance, abi: TIMELOCK_ABI, functionName: "EXECUTOR_ROLE" },
-      { chainId: activeChainId, address: governance, abi: TIMELOCK_ABI, functionName: "CANCELLER_ROLE" },
+      {
+        chainId: activeChainId,
+        address: governance,
+        abi: TIMELOCK_ABI,
+        functionName: "getMinDelay",
+      },
+      {
+        chainId: activeChainId,
+        address: governance,
+        abi: TIMELOCK_ABI,
+        functionName: "PROPOSER_ROLE",
+      },
+      {
+        chainId: activeChainId,
+        address: governance,
+        abi: TIMELOCK_ABI,
+        functionName: "EXECUTOR_ROLE",
+      },
+      {
+        chainId: activeChainId,
+        address: governance,
+        abi: TIMELOCK_ABI,
+        functionName: "CANCELLER_ROLE",
+      },
     ],
     query: { enabled: Boolean(governance), refetchInterval: REFRESH_MS },
   });

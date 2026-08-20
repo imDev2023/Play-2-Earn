@@ -38,7 +38,12 @@ import ts from "typescript";
  */
 
 /** Hooks whose single options argument must carry `chainId`. */
-const PINNED_HOOKS = new Set(["useBlock", "useReadContract", "useSimulateContract", "useWatchContractEvent"]);
+const PINNED_HOOKS = new Set([
+  "useBlock",
+  "useReadContract",
+  "useSimulateContract",
+  "useWatchContractEvent",
+]);
 
 /** Actions of shape `(config, options)` whose options must carry `chainId`. */
 const PINNED_ACTIONS = new Set([
@@ -84,15 +89,6 @@ function violationAt(sourceFile: ts.SourceFile, node: ts.Node, message: string):
   return { file: sourceFile.fileName, line: line + 1, message };
 }
 
-function hasChainIdProperty(obj: ts.ObjectLiteralExpression): boolean {
-  return obj.properties.some(
-    (p) =>
-      (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) &&
-      ts.isIdentifier(p.name) &&
-      p.name.text === "chainId",
-  );
-}
-
 function hasProperty(obj: ts.ObjectLiteralExpression, name: string): boolean {
   return obj.properties.some(
     (p) =>
@@ -107,7 +103,7 @@ function hasProperty(obj: ts.ObjectLiteralExpression, name: string): boolean {
  * wagmi import this file cannot classify. Pure over its inputs, so the plant tests
  * below exercise the same function the repo scan trusts - both halves of the join.
  */
-export function findUnpinnedChainCalls(fileName: string, source: string): Violation[] {
+function findUnpinnedChainCalls(fileName: string, source: string): Violation[] {
   const sourceFile = ts.createSourceFile(
     fileName,
     source,
@@ -127,7 +123,12 @@ export function findUnpinnedChainCalls(fileName: string, source: string): Violat
     if (module !== "wagmi" && module !== "wagmi/actions") continue;
 
     const clause = statement.importClause;
-    if (!clause || clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) {
+    if (
+      !clause ||
+      clause.name ||
+      !clause.namedBindings ||
+      !ts.isNamedImports(clause.namedBindings)
+    ) {
       violations.push(
         violationAt(
           sourceFile,
@@ -160,7 +161,11 @@ export function findUnpinnedChainCalls(fileName: string, source: string): Violat
   const writeFns = new Set<string>();
 
   const visit = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) && node.initializer && ts.isCallExpression(node.initializer)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer)
+    ) {
       const callee = node.initializer.expression;
       if (ts.isIdentifier(callee) && tracked.get(callee.text) === "useWriteContract") {
         if (ts.isObjectBindingPattern(node.name)) {
@@ -191,14 +196,22 @@ export function findUnpinnedChainCalls(fileName: string, source: string): Violat
 
       if (imported && PINNED_HOOKS.has(imported)) {
         const options = node.arguments[0];
-        if (!options || !ts.isObjectLiteralExpression(options) || !hasChainIdProperty(options)) {
+        if (
+          !options ||
+          !ts.isObjectLiteralExpression(options) ||
+          !hasProperty(options, "chainId")
+        ) {
           violations.push(
             violationAt(sourceFile, node, `${imported} must pin chainId in its options object`),
           );
         }
       } else if (imported && PINNED_ACTIONS.has(imported)) {
         const options = node.arguments[1];
-        if (!options || !ts.isObjectLiteralExpression(options) || !hasChainIdProperty(options)) {
+        if (
+          !options ||
+          !ts.isObjectLiteralExpression(options) ||
+          !hasProperty(options, "chainId")
+        ) {
           violations.push(
             violationAt(sourceFile, node, `${imported} must pin chainId in its second argument`),
           );
@@ -211,14 +224,18 @@ export function findUnpinnedChainCalls(fileName: string, source: string): Violat
         const options = node.arguments[0];
         if (!options || !ts.isObjectLiteralExpression(options)) {
           violations.push(
-            violationAt(sourceFile, node, "useReadContracts must be given a literal options object"),
+            violationAt(
+              sourceFile,
+              node,
+              "useReadContracts must be given a literal options object",
+            ),
           );
         } else {
           let sawEntry = false;
           const findEntries = (candidate: ts.Node): void => {
             if (ts.isObjectLiteralExpression(candidate) && hasProperty(candidate, "abi")) {
               sawEntry = true;
-              if (!hasChainIdProperty(candidate)) {
+              if (!hasProperty(candidate, "chainId")) {
                 violations.push(
                   violationAt(
                     sourceFile,
@@ -244,7 +261,11 @@ export function findUnpinnedChainCalls(fileName: string, source: string): Violat
         }
       } else if (writeFns.has(local)) {
         const options = node.arguments[0];
-        if (!options || !ts.isObjectLiteralExpression(options) || !hasChainIdProperty(options)) {
+        if (
+          !options ||
+          !ts.isObjectLiteralExpression(options) ||
+          !hasProperty(options, "chainId")
+        ) {
           violations.push(
             violationAt(
               sourceFile,
@@ -266,25 +287,56 @@ export function findUnpinnedChainCalls(fileName: string, source: string): Violat
 
 const WEB_ROOT = join(__dirname, "..");
 
-function sourceFilesUnder(...roots: string[]): string[] {
+/**
+ * Directories the scan deliberately skips. Everything else under packages/web is
+ * walked, so a new directory of app code is covered the day it appears rather than
+ * the day someone remembers to add it to a list - the first cut scanned only `app/`
+ * and `lib/`, and `components/` was already sitting outside it with wagmi imports.
+ *
+ * - `test`: holds this analyzer's own plants, and chain-divergence.test.ts's
+ *   deliberately unpinned read - demonstrations of the bug, not instances of it.
+ * - `e2e`, `e2e-connected`: harness code driving the app from outside through a
+ *   fake wallet. It does not import wagmi, and it is not shipped app code.
+ * - The rest is build and tool output.
+ */
+const SKIPPED_DIRS = new Set([
+  "node_modules",
+  ".next",
+  "test",
+  "e2e",
+  "e2e-connected",
+  "test-results",
+  "playwright-report",
+]);
+
+function appSourceFiles(): string[] {
   const files: string[] = [];
-  for (const root of roots) {
-    for (const entry of readdirSync(join(WEB_ROOT, root), { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile()) continue;
-      if (!/\.(ts|tsx)$/.test(entry.name)) continue;
-      files.push(join(entry.parentPath, entry.name));
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!SKIPPED_DIRS.has(entry.name) && !entry.name.startsWith(".")) {
+          walk(join(dir, entry.name));
+        }
+      } else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) {
+        files.push(join(dir, entry.name));
+      }
     }
-  }
+  };
+  walk(WEB_ROOT);
   return files;
 }
 
 describe("chain pinning (#63)", () => {
-  it("every chain-touching wagmi call in app/ and lib/ pins chainId", () => {
-    const files = sourceFilesUnder("app", "lib");
-    // A scan over zero files passes for free. Anchor it to two files that must exist
-    // for the app to function at all, so a broken glob fails here rather than passing
-    // as "no violations".
-    for (const anchor of ["app/PlayPanel.tsx", "lib/useBetHistory.ts"]) {
+  it("every chain-touching wagmi call in the web app's source pins chainId", () => {
+    const files = appSourceFiles();
+    // A scan over zero files passes for free. Anchor it to files that must exist for
+    // the app to function at all - one per top-level source directory - so a broken
+    // walk fails here rather than passing as "no violations".
+    for (const anchor of [
+      "app/PlayPanel.tsx",
+      "components/NetworkOnboarding.tsx",
+      "lib/useBetHistory.ts",
+    ]) {
       assert.ok(
         files.some((file) => relative(WEB_ROOT, file) === anchor),
         `scan did not visit ${anchor} - the file walk is broken, not the app clean`,

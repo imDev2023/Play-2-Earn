@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { before, describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
 /**
  * The condition both e2e suites make unreachable: the configured chain is not
@@ -40,6 +40,10 @@ describe("configured chain differs from chains[0] (#63)", () => {
   let readContract: typeof import("wagmi/actions").readContract;
   let GAME_ABI: typeof import("../lib/contracts").GAME_ABI;
   const requests: Recorded[] = [];
+  const realFetch = globalThis.fetch;
+  after(() => {
+    globalThis.fetch = realFetch;
+  });
 
   before(async () => {
     ({ activeChainId } = await import("../lib/chain"));
@@ -63,6 +67,9 @@ describe("configured chain differs from chains[0] (#63)", () => {
     }) as typeof fetch;
   });
 
+  // The 46630 game address, for the reader's orientation only: the assertions are
+  // about which HOST each read asks, so any address would do - no request leaves
+  // this process.
   const GAME = "0x84DD77034E1eDFEf6A26a5aAbb0036FA1F4b56aA" as const;
 
   it("the divergence this file exists to exercise actually holds", () => {

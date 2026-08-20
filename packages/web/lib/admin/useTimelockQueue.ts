@@ -140,8 +140,20 @@ export function useTimelockQueue(timelock?: Address): TimelockQueue {
   // so an operation cancelled or executed elsewhere shows up as such here.
   const { data: states } = useReadContracts({
     contracts: scheduled.flatMap((op) => [
-      { chainId: activeChainId, address: timelock, abi: TIMELOCK_ABI, functionName: "getOperationState", args: [op.id] },
-      { chainId: activeChainId, address: timelock, abi: TIMELOCK_ABI, functionName: "getTimestamp", args: [op.id] },
+      {
+        chainId: activeChainId,
+        address: timelock,
+        abi: TIMELOCK_ABI,
+        functionName: "getOperationState",
+        args: [op.id],
+      },
+      {
+        chainId: activeChainId,
+        address: timelock,
+        abi: TIMELOCK_ABI,
+        functionName: "getTimestamp",
+        args: [op.id],
+      },
     ]),
     query: { enabled: Boolean(timelock) && scheduled.length > 0, refetchInterval: REFRESH_MS },
   });
