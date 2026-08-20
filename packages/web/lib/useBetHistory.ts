@@ -5,6 +5,7 @@ import { parseAbiItem, type Address, type Hex } from "viem";
 import { getPublicClient, readContract } from "wagmi/actions";
 import { useWatchContractEvent } from "wagmi";
 import { wagmiConfig } from "./wagmi";
+import { activeChainId } from "./chain";
 import { GAME_ABI, GAME_ADDRESS, toBetView } from "./contracts";
 import { useStableCallback } from "./useStableCallback";
 
@@ -246,7 +247,11 @@ export function useBetHistory(address: Address | undefined) {
   const hydrate = useCallback((betId: bigint) => {
     (async () => {
       try {
+        // Pinned: hydrate sits on the same play path whose every other read pins
+        // `activeChainId`, precisely so a wrong-network wallet cannot hydrate a bet
+        // row from the wrong chain while its neighbours read the right one (#63).
         const bet = await readContract(wagmiConfig, {
+          chainId: activeChainId,
           address: GAME_ADDRESS,
           abi: GAME_ABI,
           functionName: "bets",
@@ -280,7 +285,7 @@ export function useBetHistory(address: Address | undefined) {
     if (!address) return;
     (async () => {
       try {
-        const client = getPublicClient(wagmiConfig);
+        const client = getPublicClient(wagmiConfig, { chainId: activeChainId });
         if (!client) return;
         const [placed, settled, refunded] = await Promise.all([
           client.getLogs({
@@ -347,6 +352,7 @@ export function useBetHistory(address: Address | undefined) {
   const onRefunded = useStableCallback((logs: PlayerLogs) => receive(logs, refundEntry));
 
   useWatchContractEvent({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetPlaced",
@@ -355,6 +361,7 @@ export function useBetHistory(address: Address | undefined) {
   });
 
   useWatchContractEvent({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetSettled",
@@ -363,6 +370,7 @@ export function useBetHistory(address: Address | undefined) {
   });
 
   useWatchContractEvent({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     eventName: "BetRefunded",
