@@ -288,41 +288,47 @@ function findUnpinnedChainCalls(fileName: string, source: string): Violation[] {
 const WEB_ROOT = join(__dirname, "..");
 
 /**
- * Directories the scan deliberately skips. Everything else under packages/web is
- * walked, so a new directory of app code is covered the day it appears rather than
- * the day someone remembers to add it to a list - the first cut scanned only `app/`
- * and `lib/`, and `components/` was already sitting outside it with wagmi imports.
+ * Directories the scan deliberately skips, at the package root only. Everything else
+ * under packages/web is walked, so a new directory of app code is covered the day it
+ * appears rather than the day someone remembers to add it to a list - the first cut
+ * scanned only `app/` and `lib/`, and `components/` was already sitting outside it
+ * with wagmi imports.
  *
  * - `test`: holds this analyzer's own plants, and chain-divergence.test.ts's
  *   deliberately unpinned read - demonstrations of the bug, not instances of it.
  * - `e2e`, `e2e-connected`: harness code driving the app from outside through a
  *   fake wallet. It does not import wagmi, and it is not shipped app code.
  * - The rest is build and tool output.
+ *
+ * Root-only, because a name can mean opposite things at different depths: `app/test/`
+ * is a shipped route at `/test` and `lib/e2e/` is app code, and a skip list matched
+ * at every depth would silently unscan both - the same silent-gap shape this widening
+ * fixed, reproduced one level down. Only dependency trees are skipped wherever they
+ * appear, since installs can nest.
  */
-const SKIPPED_DIRS = new Set([
-  "node_modules",
-  ".next",
+const ROOT_SKIPPED_DIRS = new Set([
   "test",
   "e2e",
   "e2e-connected",
   "test-results",
   "playwright-report",
 ]);
+const SKIPPED_ANYWHERE = new Set(["node_modules", ".next"]);
 
 function appSourceFiles(): string[] {
   const files: string[] = [];
-  const walk = (dir: string): void => {
+  const walk = (dir: string, atRoot: boolean): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        if (!SKIPPED_DIRS.has(entry.name) && !entry.name.startsWith(".")) {
-          walk(join(dir, entry.name));
-        }
+        if (SKIPPED_ANYWHERE.has(entry.name) || entry.name.startsWith(".")) continue;
+        if (atRoot && ROOT_SKIPPED_DIRS.has(entry.name)) continue;
+        walk(join(dir, entry.name), false);
       } else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) {
         files.push(join(dir, entry.name));
       }
     }
   };
-  walk(WEB_ROOT);
+  walk(WEB_ROOT, true);
   return files;
 }
 
