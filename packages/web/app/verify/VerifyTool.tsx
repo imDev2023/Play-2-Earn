@@ -12,7 +12,8 @@ import {
   type Verdict,
 } from "@rushood/verifier";
 import { wagmiConfig } from "../../lib/wagmi";
-import { GAME_ABI, GAME_ADDRESS, TIERS } from "../../lib/contracts";
+import { activeChainId } from "../../lib/chain";
+import { GAME_ABI, GAME_ADDRESS, TIERS, toBetView } from "../../lib/contracts";
 import { chip, field, ghostButton, hexValue, hint, label, panel, primaryButton, textInput } from "../../lib/ui";
 import { isZeroHex } from "../../lib/fairness";
 
@@ -117,13 +118,17 @@ export function VerifyTool() {
     }
     setLookup({ state: "loading" });
     try {
+      // Pinned to the configured chain: this page works with no wallet connected, so
+      // an unpinned read has no wallet chain to follow and falls back to the local
+      // transport - which on a testnet build is whoever answers on 8545 (#63).
       const bet = await readContract(wagmiConfig, {
+        chainId: activeChainId,
         address: GAME_ADDRESS,
         abi: GAME_ABI,
         functionName: "bets",
         args: [BigInt(betId)],
       });
-      const [player, tier, settled, , , clientSeed, commit, reveal] = bet;
+      const { player, tier, settled, clientSeed, commit, reveal } = toBetView(bet);
       if (player === "0x0000000000000000000000000000000000000000") {
         setLookup({ state: "error", message: `No bet #${betId} exists on this contract.` });
         return;

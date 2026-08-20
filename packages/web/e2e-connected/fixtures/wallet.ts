@@ -69,7 +69,11 @@ const DEFAULTS: WalletOptions = {
   chainId: HARDHAT_CHAIN_ID,
   rdns: "io.rabby",
   name: "Rabby Wallet",
-  nodeUrl: "http://127.0.0.1:8545",
+  // LOCAL_RPC_PORT is the same knob `packages/contracts` uses, so moving the node off
+  // a busy 8545 moves this wallet with it. Hardcoded, the wallet kept signing against
+  // 8545 while every read followed the relocated node - and the write path failed with
+  // an opaque RPC error that looked like an app bug rather than a harness port split.
+  nodeUrl: `http://127.0.0.1:${process.env.LOCAL_RPC_PORT ?? "8545"}`,
 };
 
 /**
