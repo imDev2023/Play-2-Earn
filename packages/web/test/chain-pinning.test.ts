@@ -303,8 +303,9 @@ const WEB_ROOT = join(__dirname, "..");
  * Root-only, because a name can mean opposite things at different depths: `app/test/`
  * is a shipped route at `/test` and `lib/e2e/` is app code, and a skip list matched
  * at every depth would silently unscan both - the same silent-gap shape this widening
- * fixed, reproduced one level down. Only dependency trees are skipped wherever they
- * appear, since installs can nest.
+ * fixed, reproduced one level down. Two skips do apply at any depth: `node_modules`
+ * by name, since installs can nest, and dot-directories (`.next` included), since
+ * nothing shipped lives in one.
  */
 const ROOT_SKIPPED_DIRS = new Set([
   "test",
@@ -313,7 +314,7 @@ const ROOT_SKIPPED_DIRS = new Set([
   "test-results",
   "playwright-report",
 ]);
-const SKIPPED_ANYWHERE = new Set(["node_modules", ".next"]);
+const SKIPPED_ANYWHERE = new Set(["node_modules"]);
 
 function appSourceFiles(): string[] {
   const files: string[] = [];
