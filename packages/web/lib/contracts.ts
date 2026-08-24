@@ -432,8 +432,9 @@ export const RUSH_ABI = [
  *
  * #48 has landed, and its repack proved the point the hard way: the merge collided in
  * `useBetHistory.ts`, where the two hard-coded orders disagreed about every field after
- * `tier`. That site now decodes through `toBetView`. Three positional call sites remain
- * - `VerifyTool.tsx` and `useRelayerHealth.ts` (twice) - and should move onto this too.
+ * `tier`. That site now decodes through `toBetView`, and #63's fix migrated the last
+ * three positional call sites (`VerifyTool.tsx`, `useRelayerHealth.ts` twice), so every
+ * `bets()` consumer decodes through here.
  */
 export type BetView = {
   player: Address;

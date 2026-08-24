@@ -2,6 +2,7 @@
 
 import { useReadContracts } from "wagmi";
 import type { Address } from "viem";
+import { activeChainId } from "../chain";
 import { GAME_ABI, GAME_ADDRESS } from "../contracts";
 import { successValue } from "./readResult";
 
@@ -65,7 +66,11 @@ export interface GameAdminState {
 
 export function useGameAdmin(): GameAdminState {
   const { data, isLoading, refetch } = useReadContracts({
+    // Pinned per contract: `reachable` below is documented as "the node cannot be
+    // reached", and without the pin the node it described was whichever chain the
+    // wallet happened to be on, or the local transport with no wallet at all (#63).
     contracts: GAME_VIEWS.map((functionName) => ({
+      chainId: activeChainId,
       address: GAME_ADDRESS,
       abi: GAME_ABI,
       functionName,

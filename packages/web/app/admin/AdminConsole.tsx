@@ -46,7 +46,7 @@ export function AdminConsole() {
   const { address, isConnected, chainId } = useAccount();
   const { disconnect } = useDisconnect();
   const { writeContractAsync } = useWriteContract();
-  const { data: block } = useBlock({ watch: true });
+  const { data: block } = useBlock({ chainId: activeChainId, watch: true });
 
   // The connection's own chain, not the config's - see NetworkOnboarding for why the
   // difference is the whole guard. Passed to the panels rather than folded into the

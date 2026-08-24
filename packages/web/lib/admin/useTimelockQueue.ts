@@ -5,6 +5,7 @@ import { parseAbiItem, type Address, type Hex } from "viem";
 import { getPublicClient } from "wagmi/actions";
 import { useReadContracts } from "wagmi";
 import { wagmiConfig } from "../wagmi";
+import { activeChainId } from "../chain";
 import { TIMELOCK_ABI, ZERO_BYTES32, operationStatus, type OperationStatus } from "../timelock";
 import { describeAdminCall, type AdminCallDescription } from "./ops";
 import { successValue } from "./readResult";
@@ -81,10 +82,15 @@ export function useTimelockQueue(timelock?: Address): TimelockQueue {
 
     async function load() {
       try {
-        const client = getPublicClient(wagmiConfig);
+        const client = getPublicClient(wagmiConfig, { chainId: activeChainId });
         if (!client) return;
         const [calls, salts] = await Promise.all([
-          client.getLogs({ address: timelock, event: CALL_SCHEDULED, fromBlock: 0n, toBlock: "latest" }),
+          client.getLogs({
+            address: timelock,
+            event: CALL_SCHEDULED,
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
           client.getLogs({ address: timelock, event: CALL_SALT, fromBlock: 0n, toBlock: "latest" }),
         ]);
         if (cancelled) return;
@@ -112,7 +118,9 @@ export function useTimelockQueue(timelock?: Address): TimelockQueue {
               description: describeAdminCall(data),
             } satisfies QueuedOperation;
           })
-          .sort((a, b) => (b.blockNumber > a.blockNumber ? 1 : b.blockNumber < a.blockNumber ? -1 : 0))
+          .sort((a, b) =>
+            b.blockNumber > a.blockNumber ? 1 : b.blockNumber < a.blockNumber ? -1 : 0,
+          )
           .slice(0, MAX_OPERATIONS);
 
         setScheduled(operations);
@@ -139,8 +147,20 @@ export function useTimelockQueue(timelock?: Address): TimelockQueue {
   // so an operation cancelled or executed elsewhere shows up as such here.
   const { data: states } = useReadContracts({
     contracts: scheduled.flatMap((op) => [
-      { address: timelock, abi: TIMELOCK_ABI, functionName: "getOperationState", args: [op.id] },
-      { address: timelock, abi: TIMELOCK_ABI, functionName: "getTimestamp", args: [op.id] },
+      {
+        chainId: activeChainId,
+        address: timelock,
+        abi: TIMELOCK_ABI,
+        functionName: "getOperationState",
+        args: [op.id],
+      },
+      {
+        chainId: activeChainId,
+        address: timelock,
+        abi: TIMELOCK_ABI,
+        functionName: "getTimestamp",
+        args: [op.id],
+      },
     ]),
     query: { enabled: Boolean(timelock) && scheduled.length > 0, refetchInterval: REFRESH_MS },
   });

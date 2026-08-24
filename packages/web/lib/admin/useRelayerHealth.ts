@@ -5,7 +5,8 @@ import { parseAbiItem } from "viem";
 import { useBlock, useReadContract } from "wagmi";
 import { getPublicClient, readContract } from "wagmi/actions";
 import { wagmiConfig } from "../wagmi";
-import { GAME_ABI, GAME_ADDRESS } from "../contracts";
+import { activeChainId } from "../chain";
+import { GAME_ABI, GAME_ADDRESS, toBetView } from "../contracts";
 import { relayerHealth, type RelayerHealth } from "./health";
 
 /**
@@ -22,10 +23,13 @@ const BET_SETTLED = parseAbiItem(
 );
 
 export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): RelayerHealth {
-  const { data: block } = useBlock({ watch: true });
+  // "Now" must be the *configured* chain's clock: lag is `now - placedAt`, and a block
+  // timestamp from whatever chain the wallet is on turns the indicator into noise (#63).
+  const { data: block } = useBlock({ chainId: activeChainId, watch: true });
   const [lastSettleLag, setLastSettleLag] = useState<bigint>();
 
   const { data: activeBet } = useReadContract({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     functionName: "bets",
@@ -40,7 +44,7 @@ export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): 
     let cancelled = false;
     (async () => {
       try {
-        const client = getPublicClient(wagmiConfig);
+        const client = getPublicClient(wagmiConfig, { chainId: activeChainId });
         if (!client) return;
         const logs = await client.getLogs({
           address: GAME_ADDRESS,
@@ -53,16 +57,18 @@ export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): 
         const [settledIn, bet] = await Promise.all([
           client.getBlock({ blockNumber: last.blockNumber }),
           readContract(wagmiConfig, {
+            chainId: activeChainId,
             address: GAME_ADDRESS,
             abi: GAME_ABI,
             functionName: "bets",
             args: [last.args.betId],
           }),
         ]);
-        // Index 3, not 4. The bets() tuple is packed for gas (#47) and `placedAt` sits
-        // between `settled` and `stake`; reading index 4 yields the stake, a wei-scale
-        // number that floors every lag at zero and pins this indicator to healthy.
-        const placedAt = bet[3];
+        // By name, not index: this read positionally once picked the stake - a
+        // wei-scale number that floors every lag at zero and pins the indicator to
+        // healthy - and only the comment stood between the next reader and doing it
+        // again. `toBetView` reads the order off the ABI instead.
+        const { placedAt } = toBetView(bet);
         if (cancelled) return;
         setLastSettleLag(settledIn.timestamp > placedAt ? settledIn.timestamp - placedAt : 0n);
       } catch {
@@ -75,7 +81,7 @@ export function useRelayerHealth(activeBetId?: bigint, settleTimeout?: bigint): 
   }, [activeBetId]);
 
   const now = block?.timestamp;
-  const placedAt = activeBetId && activeBet ? activeBet[3] : undefined;
+  const placedAt = activeBetId && activeBet ? toBetView(activeBet).placedAt : undefined;
 
   return relayerHealth({
     activeBetId: activeBetId ?? 0n,

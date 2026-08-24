@@ -173,6 +173,7 @@ export function PlayPanel() {
   // the contract that enforces it: a refund button that unlocks a minute before
   // `refund` will accept the call is worse than one that unlocks a minute late.
   const { data: head } = useBlock({
+    chainId: activeChainId,
     watch: pending !== null,
     query: { enabled: pending !== null },
   });
@@ -180,6 +181,7 @@ export function PlayPanel() {
   // The refund deadline the contract will actually enforce, rather than an hour
   // hard-coded here that would drift if the constant ever moved.
   const { data: settleTimeout } = useReadContract({
+    chainId: activeChainId,
     address: GAME_ADDRESS,
     abi: GAME_ABI,
     functionName: "SETTLE_TIMEOUT",
