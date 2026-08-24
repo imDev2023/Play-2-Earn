@@ -269,7 +269,7 @@ That makes Hardhat's own `ChainIdValidatorProvider` reject a foreign node on the
 `LOCAL_RPC_PORT` moves the node and its clients off a busy port together.
 **"Wider" stops at Hardhat's edge**, and the boundary is the part worth remembering: anything building its own provider is untouched by this.
 `relayer-service.ts` was the live example, left unguarded while it required `RELAYER_RPC_URL` with no default and so had no silent-fallback hazard of this kind.
-#61 gave it a committed default (`RELAYER_NETWORK` names an entry in `scripts/service/networks.ts`), so the hazard appeared and the guard arrived with it: boot asserts the endpoint's chain id against the named entry, and the reasoning lives on `assertExpectedChain`.
+Issue #61 gave it a committed default (`RELAYER_NETWORK` names an entry in `scripts/service/networks.ts`), so the hazard appeared and the guard arrived with it: boot asserts the endpoint's chain id against the named entry, and the reasoning lives on `assertExpectedChain`.
 Either way the guard proves *which chain* answered, not what state it holds: a forked node still reports 31337.
 
 **The durable lesson from that review: a guard whose argument is fetched through the thing it guards can never run.**

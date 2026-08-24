@@ -36,8 +36,14 @@ describe("committed address book (#61)", () => {
   const record = readFileSync(DEPLOYMENT_RECORD, "utf8");
 
   it("keeps the 46630 entry identical to the published deployment record", () => {
-    assert.equal(CONTRACT_ADDRESSES[46630].game, recordedAddress(record, "RushoodGame"));
-    assert.equal(CONTRACT_ADDRESSES[46630].rush, recordedAddress(record, "Rushood"));
+    // The chain id is parsed out of the record's heading rather than restated, so
+    // even the entry's key is held to the record.
+    const heading = record.match(/^# RUSHOOD deployment - \w+ \(chain (\d+)\)/);
+    assert.ok(heading, "deployment record has no parseable heading");
+    const entry = CONTRACT_ADDRESSES[Number(heading[1])];
+    assert.ok(entry, `no committed entry for chain ${heading[1]}`);
+    assert.equal(entry.game, recordedAddress(record, "RushoodGame"));
+    assert.equal(entry.rush, recordedAddress(record, "Rushood"));
   });
 
   it("keeps the 31337 entry at the deterministic skeleton addresses", () => {

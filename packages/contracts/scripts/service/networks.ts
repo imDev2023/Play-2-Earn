@@ -18,9 +18,12 @@
  * same lesson as the localhost chain-id guard in `hardhat.config.ts`, arriving at
  * the one client that builds its own provider.
  *
- * `test/RelayerService.ts` compares the testnet entry against
- * `docs/deployments/robinhoodTestnet.md`, so this table cannot silently drift from
- * the published record.
+ * `test/RelayerService.ts` holds the testnet entry's name, chain id and game
+ * address to `docs/deployments/robinhoodTestnet.md`, so those cannot silently drift
+ * from the published record. The RPC URL is the one field with no committed record
+ * to be held to - the deployment record does not carry one - so a change to it
+ * rides on review alone, and its only committed sibling is the default in
+ * `packages/web/lib/endpoints.ts`.
  */
 export interface RelayerNetwork {
   chainId: number;
