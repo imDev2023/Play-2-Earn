@@ -71,12 +71,16 @@ A `uint32` would therefore typecheck green and throw `Cannot mix BigInt and othe
 
 ## Traps that cost time
 
-**A wagmi read with no `chainId` does not read the chain the app is configured for.**
+**A wagmi call with no `chainId` does not use the chain the app is configured for.**
 It resolves to the connected wallet's chain, or with no wallet to `wagmiConfig.chains[0]`, which is `hardhat` - so a testnet build with no wallet reads `127.0.0.1:8545`, meaning whoever answers there.
 This is the client-side twin of the `--network localhost` trap below, same port, other half of the repo.
-Found the first time the app was pointed at 46630 (issue #63, eight unpinned sites): `/verify`'s lookup returned `bets returned no data ("0x")` while the contract provably had 15,098 hex chars of bytecode, because another project's `anvil` held 8545.
-`app/PlayPanel.tsx` pins `chainId: activeChainId` on all 15 of its calls and is the model; `VerifyTool.tsx`, `useBetHistory`'s `hydrate` and five admin hooks do not.
-**Neither e2e suite can catch this**, both running against a local node where the configured chain and `chains[0]` are the same value - so the condition under test is one the harness makes unreachable, which is the folded-input lesson from the fuzzing section arriving in the client.
+Found the first time the app was pointed at 46630 (issue #63): `/verify`'s lookup returned `bets returned no data ("0x")` because another project's `anvil` held 8545.
+Fixed on PR #65 - and the issue's list of eight unpinned sites was a lower bound, the fix pinned eighteen call sites, so grep the primitives rather than trusting a site list.
+That count itself shipped as "seventeen" in PR #65's own commit message, unverified; the review of the docs recording it recounted.
+Every call now pins `chainId: activeChainId`, and `packages/web/test/chain-pinning.test.ts` is the guard: a closed world over wagmi imports walking the whole package, so a new unpinned call or an unclassified wagmi import fails the unit suite.
+Its own history repeats the repo's sharpest lesson twice - the first walk missed `components/`, and the first skip list matched at every depth, where an `app/test/` would be a shipped route.
+**Neither e2e suite could catch the bug**, both running against a local node where the configured chain and `chains[0]` are the same value - the folded-input lesson from the fuzzing section arriving in the client.
+`test/chain-divergence.test.ts` now makes the two differ and proves at the transport boundary which endpoint an unpinned versus pinned read asks.
 Prove which chain answered by moving *only* `NEXT_PUBLIC_RPC_URL` (the local transport) and seeing a supposedly-testnet read change behaviour.
 
 **Never hand a wagmi watcher a function built during render.**
@@ -96,8 +100,7 @@ That suite now runs in CI as the `connected-e2e` job (#49 landed). It is the onl
 **The `bets()` tuple decodes positionally, so a reorder puts every field in its neighbour without throwing.**
 An address is still an address, and Typechain returns named tuples so contract tests pass whatever the order is.
 Any consumer derives its field order from the ABI and never hard-codes one; the guards are `packages/web/test/abi-matches-artifact.test.ts` (#53) and `toBetView` / `BetViewNamesMatchAbi` / `RawBet` in `lib/contracts.ts` (#51). Read those, not this paragraph.
-Positional sites still want migrating onto `toBetView`; issue #63 enumerates them, since it had to enumerate the same call sites for the chain-pinning fix.
-Find them with `grep -rn "bets("` rather than from a path recorded here, which has gone stale once already.
+PR #65 migrated the last positional consumers, so every `bets()` decode now goes through `toBetView`; if `grep -rn "bets("` ever finds a new positional one, that is a regression, not a leftover.
 
 **The durable lesson: this trap bit three times *inside the code written to prevent it*, and a fourth time during the merge that was supposed to end it.**
 `toBetView` shipped positional, then fixed the order but cast away the names. #53, the guard for exactly this, shipped ignoring `indexed`. Then #48's repack collided with #51's `hydrate`; git showed that conflict only because both sides happened to touch the same lines, and it would otherwise have merged clean and silently wrong.
@@ -116,6 +119,7 @@ If a chain-backed suite times out intermittently, lower the worker count before 
 **wagmi's `mock` connector cannot express a wrong network.**
 It is built from `wagmiConfig.chains`.
 This is why the #45 wrong-network bug was untestable until the injected EIP-6963 provider in `packages/web/e2e-connected/fixtures/wallet.ts`.
+That fixture signs against its own `nodeUrl`, which follows `LOCAL_RPC_PORT` only since PR #65: hardcoded 8545, a relocated node made bet *writes* fail as an opaque RPC error while every read worked, which looks like an app bug and is a harness port split.
 
 **Do not onboard a wallet extension for manual driving.**
 Adapt that same fixture into a plain IIFE and pass it to `agent-browser --init-script`.
