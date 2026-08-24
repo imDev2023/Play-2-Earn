@@ -7,7 +7,12 @@ import {
   HealthchecksSink,
   SilentHeartbeat,
 } from "./service/alerts";
-import { describeConfig, loadRelayerConfig, withCredentialSeed } from "./service/config";
+import {
+  assertExpectedChain,
+  describeConfig,
+  loadRelayerConfig,
+  withCredentialSeed,
+} from "./service/config";
 import { connectGame } from "./service/game";
 import { resolveEpoch, runPass, type LoopState } from "./service/loop";
 
@@ -34,6 +39,13 @@ async function main(): Promise<void> {
   const config = loadRelayerConfig(withCredentialSeed(process.env));
 
   const provider = new JsonRpcProvider(config.rpcUrl);
+
+  // The first thing asked of the endpoint, before any read the service would act on:
+  // which chain is this? A committed RELAYER_NETWORK carries the expected id, and a
+  // wrong answer is a boot failure - the one moment a wrong chain costs a restart
+  // rather than a key signing against the wrong deployment.
+  assertExpectedChain(config, Number((await provider.getNetwork()).chainId));
+
   const wallet = new Wallet(config.privateKey, provider);
   const game = connectGame(config.gameAddress, wallet);
 

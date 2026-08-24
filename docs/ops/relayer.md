@@ -58,8 +58,9 @@ The service validates all of them on boot and refuses to start with a list of ev
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `RELAYER_RPC_URL` | yes | JSON-RPC endpoint. Mainnet is `https://rpc.mainnet.chain.robinhood.com` |
-| `RELAYER_GAME_ADDRESS` | yes | The deployed `RushoodGame` |
+| `RELAYER_NETWORK` | no | A committed deployment by name (see below). Supplies `RELAYER_RPC_URL` and `RELAYER_GAME_ADDRESS` |
+| `RELAYER_RPC_URL` | unless `RELAYER_NETWORK` | JSON-RPC endpoint. Mainnet is `https://rpc.mainnet.chain.robinhood.com` |
+| `RELAYER_GAME_ADDRESS` | unless `RELAYER_NETWORK` | The deployed `RushoodGame` |
 | `RELAYER_PRIVATE_KEY` | yes | The account that sponsors settlement gas |
 | `RELAYER_SEED` | yes | The master seed. **No default.** See below |
 | `RELAYER_HEALTHCHECK_URL` | strongly advised | Healthchecks.io ping URL for the dead man's switch |
@@ -71,6 +72,18 @@ The service validates all of them on boot and refuses to start with a list of ev
 | `RELAYER_ETH_PAGE_WEI` | no (0.001 ETH) | Gas balance that pages |
 | `RELAYER_PROBE_TIMEOUT_MS` | no (60000) | Failed-poll window before the node counts as unreachable |
 | `RELAYER_BLOCK_STALL_MS` | no (120000) | Frozen-head window before the chain counts as stalled |
+
+### Committed deployments
+
+`RELAYER_NETWORK` names an entry in `scripts/service/networks.ts`, the committed network book (#61).
+An entry exists there if and only if a deployment record exists under `docs/deployments/`, so the name is a pointer to configuration that is reviewed and versioned rather than typed at run time.
+The explicit `RELAYER_RPC_URL` and `RELAYER_GAME_ADDRESS` variables still win where set - that is how the "switch to a fallback provider" move under Responding works - but the chain expectation survives the override, because a fallback provider serves the same chain.
+
+Naming a network also makes boot verify the chain: the service asks the endpoint for its chain id before doing anything else, and refuses to start if the answer is not the one the entry commits to.
+A configuration built from explicit variables alone carries no such expectation.
+
+The one committed entry today is `robinhoodTestnet` (chain 46630), and `npm run relayer:testnet` starts the service against it.
+Secrets are never part of an entry: `RELAYER_PRIVATE_KEY` and `RELAYER_SEED` come from the environment exactly as before.
 
 ### The seed
 

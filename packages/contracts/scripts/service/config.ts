@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAddress } from "ethers";
 import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "../lib/hashchain";
+import { knownNetworkNames, RELAYER_NETWORKS, type RelayerNetwork } from "./networks";
 
 /**
  * Production configuration for the relayer service (#39).
@@ -21,6 +22,14 @@ import { DEFAULT_CHAIN_LENGTH, DEFAULT_MASTER_SEED } from "../lib/hashchain";
 export interface RelayerConfig {
   rpcUrl: string;
   gameAddress: string;
+  /**
+   * The chain id the RPC endpoint must answer as, present exactly when
+   * RELAYER_NETWORK names a committed deployment. The service proves on boot which
+   * chain actually answered (`assertExpectedChain`) before holding a key against
+   * it. A configuration built from explicit variables alone carries no expectation:
+   * there is no committed name to check the answer against.
+   */
+  expectedChainId?: number;
   privateKey: string;
   masterSeed: string;
   chainLength: number;
@@ -126,12 +135,36 @@ export function withCredentialSeed(
 export function loadRelayerConfig(env: Env): RelayerConfig {
   const problems: string[] = [];
 
-  const rpcUrl = env.RELAYER_RPC_URL?.trim();
-  if (!rpcUrl) problems.push("RELAYER_RPC_URL is required (the chain's JSON-RPC endpoint)");
+  // The committed network book (#61). A named network supplies the RPC URL and game
+  // address from committed configuration; the explicit variables below still win
+  // where set, for the same reason the seed's environment override wins over the
+  // systemd credential.
+  const networkName = env.RELAYER_NETWORK?.trim();
+  let network: RelayerNetwork | undefined;
+  if (networkName) {
+    network = RELAYER_NETWORKS[networkName];
+    if (!network) {
+      problems.push(
+        `RELAYER_NETWORK ${JSON.stringify(networkName)} is not in the committed network book ` +
+          `(known: ${knownNetworkNames()})`,
+      );
+    }
+  }
 
-  const gameAddress = env.RELAYER_GAME_ADDRESS?.trim();
+  const rpcUrl = env.RELAYER_RPC_URL?.trim() || network?.rpcUrl;
+  if (!rpcUrl) {
+    problems.push(
+      "RELAYER_RPC_URL is required (the chain's JSON-RPC endpoint), or name a committed " +
+        "deployment with RELAYER_NETWORK",
+    );
+  }
+
+  const gameAddress = env.RELAYER_GAME_ADDRESS?.trim() || network?.gameAddress;
   if (!gameAddress) {
-    problems.push("RELAYER_GAME_ADDRESS is required (the deployed RushoodGame)");
+    problems.push(
+      "RELAYER_GAME_ADDRESS is required (the deployed RushoodGame), or name a committed " +
+        "deployment with RELAYER_NETWORK",
+    );
   } else if (!isAddress(gameAddress)) {
     problems.push("RELAYER_GAME_ADDRESS is not a valid address");
   }
@@ -200,6 +233,11 @@ export function loadRelayerConfig(env: Env): RelayerConfig {
   return {
     rpcUrl: rpcUrl as string,
     gameAddress: gameAddress as string,
+    // The expectation follows the *name*, not the URL: naming a network while
+    // overriding RELAYER_RPC_URL is the runbook's switch-to-a-fallback-provider move,
+    // a different endpoint for the same chain - and mid-incident is exactly when a
+    // wrong-chain URL is most likely to be pasted.
+    expectedChainId: network?.chainId,
     privateKey: privateKey as string,
     masterSeed: masterSeed as string,
     chainLength,
@@ -215,6 +253,24 @@ export function loadRelayerConfig(env: Env): RelayerConfig {
 }
 
 /**
+ * Refuse to run against a chain other than the one the configuration names.
+ *
+ * Called once on boot, with the id the RPC endpoint actually reported. The guard the
+ * Hardhat config grew in #56 stops at Hardhat's edge; this service builds its own
+ * provider, so it carries its own copy of the same rule. Like that guard, it proves
+ * *which chain* answered, not what state it holds.
+ *
+ * No-op when the configuration carries no expectation (see `expectedChainId`).
+ */
+export function assertExpectedChain(config: RelayerConfig, actualChainId: number): void {
+  if (config.expectedChainId === undefined || actualChainId === config.expectedChainId) return;
+  throw new Error(
+    `The configured network expects chain ${config.expectedChainId}, but ${config.rpcUrl} ` +
+      `answered as chain ${actualChainId}. Refusing to run against the wrong chain.`,
+  );
+}
+
+/**
  * One line describing how the service is configured, safe to log on boot.
  *
  * Neither the seed nor the key appears. The address the key controls does, because an
@@ -224,6 +280,7 @@ export function describeConfig(config: RelayerConfig, relayerAddress: string): s
   return [
     `game ${config.gameAddress}`,
     `relayer ${relayerAddress}`,
+    ...(config.expectedChainId === undefined ? [] : [`chain ${config.expectedChainId}`]),
     `chain length ${config.chainLength} (rotate at ${config.chainLength - config.rotationMargin})`,
     config.healthcheckPingUrl ? "dead man's switch on" : "dead man's switch OFF",
     config.alertUrl ? "alerts on" : "alerts to the journal only",
