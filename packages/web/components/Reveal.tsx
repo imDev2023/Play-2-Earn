@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { formatUnits } from "viem";
-import { multiplierLabel, TIERS } from "../lib/contracts";
+import { lossExplanation, multiplierLabel, TIERS } from "../lib/contracts";
 
 export type RevealPhase = "idle" | "drawing" | "won" | "lost";
 
@@ -15,10 +15,17 @@ export function Reveal({
   phase,
   tier,
   payout,
+  roll,
 }: {
   phase: RevealPhase;
   tier: number;
   payout: bigint;
+  /**
+   * The roll the chain reported in `BetSettled`. Undefined only if a settlement ever
+   * reaches this screen without one, in which case the panel falls back to the dash
+   * rather than inventing a number.
+   */
+  roll?: bigint;
 }) {
   const scramble = useScramble(phase === "drawing");
   if (phase === "idle") return null;
@@ -50,7 +57,7 @@ export function Reveal({
         <span style={{ ...eyebrow, color: "var(--win)" }}>
           {isMoonshot ? "★ Moonshot hit" : `Winner · ${multiplierLabel(tier)}`}
         </span>
-        <span className="mono" style={bigNumber("var(--win)")}>
+        <span data-testid="reveal-figure" className="mono" style={bigNumber("var(--win)")}>
           +{formatUnits(payout, 18)}
         </span>
         <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>RUSH paid to your wallet</span>
@@ -58,12 +65,31 @@ export function Reveal({
     );
   }
 
+  const missReason = lossExplanation(tier);
+
   return (
     <div data-testid="reveal" data-phase="lost" style={card("var(--line)")}>
       <span style={eyebrow}>No luck this round</span>
-      <span className="mono" style={{ ...bigNumber("var(--loss)"), opacity: 0.8 }}>
-        -
+      <span
+        data-testid="reveal-figure"
+        className="mono"
+        style={{ ...bigNumber("var(--loss)"), opacity: 0.8 }}
+      >
+        {roll === undefined ? "-" : roll.toString()}
       </span>
+      {/*
+        Its own line, under the number it explains, rather than run together with the
+        copy below: the two say different things, and at 0.9rem in a centred card a
+        single run wraps wherever the box happens to break.
+      */}
+      {missReason !== null && (
+        <span
+          data-testid="reveal-miss-reason"
+          style={{ color: "var(--muted)", fontSize: "0.9rem" }}
+        >
+          {missReason}
+        </span>
+      )}
       <span style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
         The stake stays with the house. Run it back?
       </span>

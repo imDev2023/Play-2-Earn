@@ -65,6 +65,30 @@ test.describe("placing a bet", () => {
       .toBeGreaterThan(playsBefore);
 
     await expect(page.getByTestId("fairness-roll")).toBeVisible();
+
+    // The reveal has to land on the number the draw promised, and for a miss it used to
+    // land on a bare `-`. Both expectations below are exact because this bet is at the
+    // default tier, the coin flip: a win pays 100 x 0.95 x 2, and the only losing roll of
+    // a 1-in-2 draw is 1. Exactness is what makes this an assertion about the number
+    // rather than about one merely being present.
+    //
+    // The phase is waited for rather than read once. The reveal is driven by the
+    // `BetSettled` watcher while the fairness verdict above comes from the history hook,
+    // so the two can land a render apart, and a one-shot `getAttribute` can catch
+    // "drawing" on the chain-backed tier this suite runs on.
+    const reveal = page.getByTestId("reveal");
+    await expect(reveal).toHaveAttribute("data-phase", /^(won|lost)$/);
+    const won = (await reveal.getAttribute("data-phase")) === "won";
+    await expect(page.getByTestId("reveal-figure")).toHaveText(won ? "+190" : "1");
+
+    // The sentence that makes the number mean something. Asserted because without it
+    // nothing does: `lossExplanation` has its own unit tests, and deleting the line that
+    // renders it left every one of them green.
+    await expect(page.getByTestId("reveal-miss-reason")).toHaveCount(won ? 0 : 1);
+    if (!won) {
+      await expect(page.getByTestId("reveal-miss-reason")).toHaveText("A win was roll 0, 1-in-2.");
+    }
+
     await expect(page.getByTestId("verify-link")).toBeVisible();
     await expect(page.getByTestId("place-bet")).toBeEnabled();
 

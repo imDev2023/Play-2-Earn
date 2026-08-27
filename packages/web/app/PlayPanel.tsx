@@ -41,7 +41,12 @@ import { SettlementHelp } from "../components/SettlementHelp";
 import { BetHistory } from "../components/BetHistory";
 import { FairnessPanel } from "../components/FairnessPanel";
 
-type Result = { win: boolean; payout: bigint };
+/**
+ * A settled bet, as `BetSettled` reported it. `roll` rides along so the reveal can
+ * land on the number the chain drew rather than a dash; it is the event's own value,
+ * never a recomputation, so it cannot disagree with the fairness record beside it.
+ */
+type Result = { win: boolean; payout: bigint; roll?: bigint };
 type Status = "idle" | "approving" | "placing" | "waiting" | "error";
 
 /**
@@ -221,11 +226,15 @@ export function PlayPanel() {
   // re-renders on every block while a bet is pending - which is precisely when the
   // settlement it is waiting for lands. See lib/useStableCallback.
   const onSettledLog = useStableCallback(
-    (logs: readonly { args: { player?: string; win?: boolean; payout?: bigint } }[]) => {
+    (
+      logs: readonly {
+        args: { player?: string; win?: boolean; payout?: bigint; roll?: bigint };
+      }[],
+    ) => {
       for (const log of logs) {
-        const { player, win, payout } = log.args;
+        const { player, win, payout, roll } = log.args;
         if (isMine(player) && win !== undefined) {
-          setResult({ win, payout: payout ?? 0n });
+          setResult({ win, payout: payout ?? 0n, roll });
           setStatus("idle");
           setPending(null);
           void refetchBalance();
@@ -428,7 +437,12 @@ export function PlayPanel() {
       <NetworkOnboarding />
 
       {revealPhase !== "idle" && (
-        <Reveal phase={revealPhase} tier={betTier} payout={result?.payout ?? 0n} />
+        <Reveal
+          phase={revealPhase}
+          tier={betTier}
+          payout={result?.payout ?? 0n}
+          roll={result?.roll}
+        />
       )}
 
       {settlement && (
