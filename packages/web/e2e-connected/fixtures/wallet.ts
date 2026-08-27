@@ -1,4 +1,5 @@
 import { test as base, type Page } from "@playwright/test";
+import { localNodeUrl } from "../../playwright.base";
 
 /**
  * A wallet for the connected-path suite.
@@ -73,7 +74,11 @@ const DEFAULTS: WalletOptions = {
   // a busy 8545 moves this wallet with it. Hardcoded, the wallet kept signing against
   // 8545 while every read followed the relocated node - and the write path failed with
   // an opaque RPC error that looked like an app bug rather than a harness port split.
-  nodeUrl: `http://127.0.0.1:${process.env.LOCAL_RPC_PORT || "8545"}`,
+  //
+  // Shared with `localChainEnv`, which builds the app's own transport, rather than
+  // spelled out twice: two copies of this expression is how the split came back from
+  // the other side, with the wallet following the port and the app left on 8545.
+  nodeUrl: localNodeUrl(),
 };
 
 /**
