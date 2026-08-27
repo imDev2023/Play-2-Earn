@@ -268,8 +268,9 @@ PR #56 declares `localhost` with `chainId: Number(LOCAL_CHAIN_ID)`, which is `31
 That makes Hardhat's own `ChainIdValidatorProvider` reject a foreign node on the first request, which is wider than any hand-placed check because it covers `hardhat test` and `hardhat console` too.
 `LOCAL_RPC_PORT` moves the node and its clients off a busy port together.
 **"Wider" stops at Hardhat's edge**, and the boundary is the part worth remembering: anything building its own provider is untouched by this.
-`relayer-service.ts` is the live example, left unguarded on purpose because it requires `RELAYER_RPC_URL` with no default and so has no silent-fallback hazard of this kind.
-It proves *which chain* answered, not what state it holds: a forked node still reports 31337.
+`relayer-service.ts` was the live example, left unguarded while it required `RELAYER_RPC_URL` with no default and so had no silent-fallback hazard of this kind.
+Issue #61 gave it a committed default (`RELAYER_NETWORK` names an entry in `scripts/service/networks.ts`), so the hazard appeared and the guard arrived with it: boot asserts the endpoint's chain id against the named entry, and the reasoning lives on `assertExpectedChain`.
+Either way the guard proves *which chain* answered, not what state it holds: a forked node still reports 31337.
 
 **The durable lesson from that review: a guard whose argument is fetched through the thing it guards can never run.**
 Six sites called `assertLocalDevChain(network.name, chainId)` and fetched that `chainId` through the provider, four of them inline as `(await ethers.provider.getNetwork()).chainId`; the validator threw while the argument was still being evaluated, so the assert was never entered, and the stack trace pointed at *the assert's own line* - which is what made it look live.

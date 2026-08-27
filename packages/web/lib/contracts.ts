@@ -2,17 +2,15 @@ import type { Address, ReadContractReturnType } from "viem";
 import { TIER_ODDS } from "@rushood/verifier";
 
 /**
- * Contract addresses for the walking skeleton.
+ * Contract addresses come from the committed per-chain address book (#61).
  *
- * Defaults are the deterministic addresses from `deploy-skeleton.ts` on a fresh
- * local Hardhat node (deployer nonces 0/1/2). Override per environment with
- * NEXT_PUBLIC_* vars once real deployments exist.
+ * `lib/addresses.ts` resolves them for the configured chain - committed entry by
+ * default, `NEXT_PUBLIC_GAME_ADDRESS` / `NEXT_PUBLIC_RUSH_ADDRESS` overriding - and
+ * throws at build time for a chain it cannot resolve, rather than defaulting to the
+ * local skeleton on a chain where nothing is deployed at those addresses.
+ * Re-exported here because this module is where every consumer already imports them.
  */
-export const GAME_ADDRESS = (process.env.NEXT_PUBLIC_GAME_ADDRESS ??
-  "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0") as Address;
-
-export const RUSH_ADDRESS = (process.env.NEXT_PUBLIC_RUSH_ADDRESS ??
-  "0x5FbDB2315678afecb367f032d93F642f64180aa3") as Address;
+export { GAME_ADDRESS, RUSH_ADDRESS } from "./addresses";
 
 /**
  * Payout numerator/denominator and the tier multiplier label both come from the public

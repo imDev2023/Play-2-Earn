@@ -15,7 +15,8 @@
     "checklist": "hardhat run scripts/launch-checklist.ts --network localhost",
     "verify:publish": "hardhat run scripts/verify-and-publish.ts",
     "relayer": "hardhat run scripts/relayer.ts --network localhost",
-    "relayer:service": "tsx scripts/relayer-service.ts"
+    "relayer:service": "tsx scripts/relayer-service.ts",
+    "relayer:testnet": "RELAYER_NETWORK=robinhoodTestnet tsx scripts/relayer-service.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
