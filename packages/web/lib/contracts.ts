@@ -31,6 +31,28 @@ export const TIERS = TIER_ODDS.map((odds, index) => ({
   label: TIER_LABELS[index],
 }));
 
+/**
+ * Why a settled draw lost, in the player's own terms.
+ *
+ * `Reveal` flickers through digits while the relayer settles, so by the time a verdict
+ * lands the panel has already promised the player a number. A win pays that promise
+ * off with its payout. A loss showed a bare `-` at the same size, which reads as a
+ * value that failed to load rather than as a miss.
+ *
+ * The number the loss panel shows is the chain's own `roll` from `BetSettled`, never a
+ * recomputation - the fairness record sits on the same screen and states it too, and
+ * two numbers derived separately could disagree. This supplies only the sentence that
+ * makes the number mean something.
+ *
+ * Null for a tier the ladder does not have: that is a bug elsewhere, but printing
+ * "1-in-undefined" under a lost stake would be a worse one, and the roll on its own is
+ * still true.
+ */
+export function lossExplanation(tier: number): string | null {
+  const entry = TIERS[tier];
+  return entry === undefined ? null : `A win was roll 0, 1-in-${entry.odds}.`;
+}
+
 /** Minimal ABI for the pieces of RushoodGame the skeleton UI touches. */
 export const GAME_ABI = [
   {

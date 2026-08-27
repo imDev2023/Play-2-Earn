@@ -26,7 +26,15 @@ It deliberately does not restate what the linked files already say.
 Only Robinhood Chain testnet 46630, redeployed 2026-08-13.
 Verify with `git log --all --diff-filter=A --name-only -- 'docs/deployments/*'`, which names two files and **one deployment record**: `robinhoodTestnet.md`, plus `REDEPLOY-RUNBOOK.md`, which is procedure rather than a record.
 A deployment record here is named after its network, so a mainnet one would be impossible to miss.
-The README's "mainnet, real-value" opening is product intent; `lib/chain.ts` hard-codes no mainnet endpoints on purpose and `activeChainConfigError` fails a mainnet build loudly rather than silently.
+The README's "mainnet, real-value" opening is product intent.
+**`lib/chain.ts` now commits the real mainnet endpoints, and that is not readiness.**
+It withheld them under #26 because the chain had not published them and a guessed RPC is worse than a missing one; they were published on 2026-07-31, so the comment saying otherwise had been false for a month while `hardhat.config.ts` already defaulted to the same explorer.
+What stops a mainnet build is `lib/addresses.ts`, which has no 4663 entry and throws at module load, so the wrong artefact is never produced at all - a harder gate than the message it replaces, which only appeared once a player had loaded the page.
+The bridge is still env-only, because "the canonical Arbitrum bridge" has no URL to commit, and `gasHelpUrl` returns null rather than a guess.
+**`packages/contracts/hardhat.config.ts` deliberately does not follow, and leaves `robinhoodMainnet.url` empty.**
+A web build that can read 4663 is harmless; a contracts package with a working mainnet URL makes `--network robinhoodMainnet` a live deploy target.
+Do not tidy the two halves into agreement.
+Note the spec's §10 still plans the production RPC through Alchemy, which is a deployment choice reachable through `NEXT_PUBLIC_ROBINHOOD_RPC_URL`, not a contradiction of the public default.
 
 **The five-change redeploy debt is paid.** #48's repack, #54's `cancun` and `Treasury.GameSet`, #55's packed slot and #58's `MIN_SOLVENCY_CAP_DEN` are all on chain, verified against post-#58 source.
 Addresses are in `docs/deployments/robinhoodTestnet.md`; the runbook that produced them is `docs/deployments/REDEPLOY-RUNBOOK.md`.
@@ -111,6 +119,18 @@ No test caught any of them. Review and the merge caught them all. That is the en
 `playwright.connected.config.ts` needs the node running with the skeleton deployed and the relayer settling.
 Hence two configs and two CI jobs.
 
+**Two `next dev` servers started from `packages/web` share `.next`, and the later one's environment silently wins.**
+`NEXT_PUBLIC_*` is inlined at compile time, so the second server's build overwrites the first's client chunks and the first then serves someone else's chain.
+A testnet-configured app was found calling `127.0.0.1:8548` at the *local skeleton* address and reporting "Couldn't reach the contract: HTTP request failed", which is issue #63's symptom exactly and was nothing of the kind.
+Neither the console nor the network panel settled it: the panel showed CORS preflights with no POST after them, which looks like a blocked request rather than a request to somewhere else.
+Patching `window.fetch` in the page to log the URL it was actually given is what named the real endpoint in one step.
+Run one dev server at a time, and clear `.next` whenever you change which chain a build targets.
+
+**A gitignored `packages/web/.env` retargets both e2e suites, and only on a working machine.**
+It supplies `NEXT_PUBLIC_CHAIN_ID` and the addresses when the shell does not, so a `.env` naming the testnet turned 12 of the 19 connected specs into "Switch network to play" while CI, which has no `.env`, stayed green.
+Green in CI and red locally points every suspicion at the tests.
+`localChainEnv` in `playwright.base.ts` now pins the chain for the server *that config starts*, and `test/e2e-chain-env.test.ts` fails if it is ever unwired; it cannot help with a stray server that is already running, which is the trap above.
+
 **Cap Playwright workers on a chain-backed suite.**
 Every worker holds a browser polling one single-threaded Hardhat node.
 At the default the connected bet spec failed about one run in three; at 4 workers it passed 8 consecutive runs and got *faster* (12.5s against 16s).
@@ -120,6 +140,7 @@ If a chain-backed suite times out intermittently, lower the worker count before 
 It is built from `wagmiConfig.chains`.
 This is why the #45 wrong-network bug was untestable until the injected EIP-6963 provider in `packages/web/e2e-connected/fixtures/wallet.ts`.
 That fixture signs against its own `nodeUrl`, which follows `LOCAL_RPC_PORT` only since PR #65: hardcoded 8545, a relocated node made bet *writes* fail as an opaque RPC error while every read worked, which looks like an app bug and is a harness port split.
+The same split ran the other way until the app's transport followed the port too, and both now read one `localNodeUrl` in `playwright.base.ts` rather than two copies of the same expression.
 
 **Do not onboard a wallet extension for manual driving.**
 Adapt that same fixture into a plain IIFE and pass it to `agent-browser --init-script`.

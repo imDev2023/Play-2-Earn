@@ -17,19 +17,54 @@ import {
  * chain the app expects a wallet to be on, defaulting to Hardhat so the local play
  * flow works out of the box. All endpoints are env-overridable.
  *
- * Testnet endpoints are the real ones (docs.robinhood.com/chain).
+ * Testnet and mainnet endpoints are both the real published ones
+ * (docs.robinhood.com/chain), and all of them stay env-overridable.
  *
- * Mainnet endpoints are NOT hard-coded, and that is deliberate (#26). Robinhood
- * Chain's mainnet RPC, explorer and bridge URLs are not published yet, so any literal
- * here would be a guess. A guessed RPC is worse than a missing one: the app would look
- * configured, point at a hostname nobody controls, and fail at request time with a
- * network error rather than a diagnosable one. Instead mainnet reads entirely from
- * NEXT_PUBLIC_ROBINHOOD_* env vars, and `activeChainConfigError` reports it plainly
- * when the app is pointed at 4663 without them.
+ * Mainnet's were withheld under #26 because the chain had not published them, and a
+ * guessed RPC is worse than a missing one: the app looks configured, points at a
+ * hostname nobody controls, and fails at request time as a network error rather than as
+ * anything diagnosable. They were published on 2026-07-31, so that reasoning no longer
+ * reaches them - and the comment that used to sit here saying they were unpublished had
+ * been false for a month while `packages/contracts/hardhat.config.ts` already committed
+ * the same explorer as its own default.
+ *
+ * The bridge is the exception and keeps the original treatment. The chain names only
+ * "the canonical Arbitrum bridge" with no URL to commit, so `MAINNET_BRIDGE_URL` stays
+ * env-only and `gasHelpUrl` hides the link rather than offering a dead one.
+ *
+ * None of this makes 4663 reachable. Nothing is deployed there, and the thing that
+ * stops a mainnet build is `lib/addresses.ts`, which has no 4663 entry and throws at
+ * module load - build time for Next, so the wrong artefact is never produced. Do not
+ * read configured endpoints as readiness; see the tests in `test/chain.test.ts`, which
+ * assert the two separately for exactly that reason.
  */
 
-/** True once real mainnet endpoints have been supplied. False in every build today. */
-export const MAINNET_ENDPOINTS_CONFIGURED = MAINNET_RPC_URL !== "" && MAINNET_EXPLORER_URL !== "";
+/**
+ * Why mainnet cannot be talked to, as a pure function of its two endpoints.
+ *
+ * Pure so the blanked case can be asserted without a test re-importing this module
+ * under a mutated environment: the constants above are read once, at module load, so
+ * such a test would depend on import order rather than on the rule.
+ *
+ * It still earns its place now that the endpoints have committed defaults, because ""
+ * is how a shell suppresses a value a file would otherwise supply - an operator can
+ * still reach the unconfigured state deliberately, and this is what they get instead of
+ * an opaque fetch failure.
+ */
+export function mainnetEndpointError({
+  rpc,
+  explorer,
+}: {
+  rpc: string;
+  explorer: string;
+}): string | null {
+  if (rpc !== "" && explorer !== "") return null;
+  return (
+    "Robinhood Chain mainnet endpoints are not configured. Set " +
+    "NEXT_PUBLIC_ROBINHOOD_RPC_URL and NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL " +
+    "before targeting chain 4663."
+  );
+}
 
 export const robinhoodChain = defineChain({
   id: 4663,
@@ -116,14 +151,8 @@ export function gasHelpUrl(chainId: number = ACTIVE_CHAIN_ID): string | null {
  * failing as an opaque network error on the first RPC call.
  */
 export function activeChainConfigError(chainId: number = ACTIVE_CHAIN_ID): string | null {
-  if (chainId === robinhoodChain.id && !MAINNET_ENDPOINTS_CONFIGURED) {
-    return (
-      "Robinhood Chain mainnet endpoints are not configured. Set " +
-      "NEXT_PUBLIC_ROBINHOOD_RPC_URL and NEXT_PUBLIC_ROBINHOOD_EXPLORER_URL " +
-      "before targeting chain 4663."
-    );
-  }
-  return null;
+  if (chainId !== robinhoodChain.id) return null;
+  return mainnetEndpointError({ rpc: MAINNET_RPC_URL, explorer: MAINNET_EXPLORER_URL });
 }
 
 /**
